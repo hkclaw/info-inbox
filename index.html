@@ -634,10 +634,12 @@
       <div class="head-actions">
         <button type="button" class="backup" id="backup">下載備份</button>
         <button type="button" class="backup" id="exportBox" hidden>匯出呢個盒</button>
+        <button type="button" class="backup" id="importBox">匯入盒備份</button>
         <button type="button" class="backup" id="restoreBackup">還原備份</button>
         <button type="button" class="backup" id="wipeLocal">清空本機資料</button>
       </div>
       <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+      <input type="file" id="importBoxFile" accept="application/json,.json" hidden>
     </header>
     <main class="canvas">
       <section id="dump" class="on">
@@ -2410,6 +2412,37 @@ document.getElementById("searchForm").addEventListener("submit", async (e) => {
   el.replaceChildren(...nodes);
 });
 
+
+document.getElementById("importBox").addEventListener("click", () => {
+  document.getElementById("importBoxFile").click();
+});
+document.getElementById("importBoxFile").addEventListener("change", async () => {
+  const input = document.getElementById("importBoxFile");
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  if (!confirm("會將呢個備份合併入去，唔會清其他盒。確認匯入？")) return;
+  let res, body;
+  try {
+    res = await fetch("/api/import-box", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: await file.text(),
+    });
+    body = await res.json().catch(() => ({}));
+  } catch {
+    alert("匯入唔到");
+    return;
+  }
+  if (!res.ok) {
+    alert(body.error || "備份檔唔啱格式");
+    return;
+  }
+  await refreshBoxes();
+  refreshDumpOnboard();
+  loadNotes();
+  refreshPendingBadge();
+});
 
 document.getElementById("restoreBackup").addEventListener("click", () => {
   document.getElementById("restoreFile").click();

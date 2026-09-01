@@ -1208,6 +1208,76 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "POST" && u.pathname === "/api/import-box") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "");
+    } catch {
+      json(res, 400, { error: "備份檔唔啱格式" });
+      return;
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Array.isArray(payload.notes) || !Array.isArray(payload.questions)) {
+      json(res, 400, { error: "備份檔唔啱格式" });
+      return;
+    }
+    for (const n of payload.notes) {
+      if (!n || typeof n !== "object" || Array.isArray(n)) {
+        json(res, 400, { error: "備份檔唔啱格式" });
+        return;
+      }
+    }
+    const store = load();
+    const idMap = {};
+    const stamp = Date.now();
+    const incoming = [];
+    payload.notes.forEach((n, i) => {
+      const oldId = String(n.id || "");
+      const nid = String(stamp) + "-b" + i + "-" + Math.random().toString(36).slice(2, 7);
+      if (oldId) idMap[oldId] = nid;
+      incoming.push({
+        ...n,
+        id: nid,
+        box: normalizeBox(n.box),
+      });
+    });
+    const incomingQs = [];
+    (payload.questions || []).forEach((q, i) => {
+      if (!q || typeof q !== "object") return;
+      const newNote = idMap[String(q.noteId || "")];
+      if (!newNote) return;
+      incomingQs.push({
+        ...q,
+        id: String(stamp) + "-bq" + i + "-" + Math.random().toString(36).slice(2, 7),
+        noteId: newNote,
+      });
+    });
+    const dismissed = Array.isArray(payload.dismissedMerges) ? payload.dismissedMerges : [];
+    const extraDismiss = [];
+    dismissed.forEach((k) => {
+      const parts = String(k).split("|");
+      if (parts.length !== 2) return;
+      const a = idMap[parts[0]], b = idMap[parts[1]];
+      if (!a || !b) return;
+      const key = pairKey(a, b);
+      if (!store.dismissedMerges.includes(key) && !extraDismiss.includes(key)) extraDismiss.push(key);
+    });
+    store.notes = incoming.concat(store.notes);
+    store.questions = incomingQs.concat(store.questions || []);
+    store.dismissedMerges = (store.dismissedMerges || []).concat(extraDismiss);
+    save(store);
+    const rawVec = payload.vectors;
+    if (rawVec && typeof rawVec === "object" && !Array.isArray(rawVec)) {
+      const map = loadVectors();
+      for (const [oldId, vec] of Object.entries(rawVec)) {
+        const nid = idMap[oldId];
+        if (nid && Array.isArray(vec) && vec.length) map[nid] = vec;
+      }
+      saveVectors(map);
+    }
+    json(res, 200, { ok: true, added: incoming.length, questions: incomingQs.length });
+    return;
+  }
+
   if (method === "POST" && u.pathname === "/api/wipe") {
     let payload;
     try {
