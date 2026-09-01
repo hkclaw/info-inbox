@@ -36,6 +36,12 @@ Overlapping notes (shared tags or similar text) show as suggestions. Nothing is 
 
 GET /api/merge-suggestions lists pairs (note ids + a short reason). Accept merges bodies, unions tags, keeps one summary (rewrites with Ollama only if it is up), and deletes the other id. Dismiss leaves both notes. Stored in data/. Localhost only, no cloud.
 
+## Notes
+
+Click a tag chip on the Notes tab to show only notes with that tag. 「清篩選／顯示全部」 clears the filter.
+
+Each card has 刪除. Confirm runs DELETE /api/notes/:id and removes that note from data/. Missing ids return 「搵唔到呢條筆記」. Questions are not deleted with the note.
+
 ## Data
 
 JSON file under data/ (gitignored). Notes: id, text, createdAt, tags, summary, classifyError. Questions: id, text, status (open | answered), answer, createdAt.

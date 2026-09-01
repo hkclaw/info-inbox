@@ -202,6 +202,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const delNote = /^\/api\/notes\/([^/]+)$/.exec(u.pathname);
+  if (method === "DELETE" && delNote) {
+    const id = decodeURIComponent(delNote[1]);
+    const store = load();
+    const i = store.notes.findIndex((n) => n.id === id);
+    if (i < 0) {
+      json(res, 404, { error: "搵唔到呢條筆記" });
+      return;
+    }
+    store.notes.splice(i, 1);
+    save(store);
+    json(res, 200, { ok: true, deleted: id });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/questions") {
     json(res, 200, { questions: load().questions });
     return;
