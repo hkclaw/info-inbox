@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFParse } from "pdf-parse";
+import * as XLSX from "xlsx";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const BIND = process.env.BIND || "127.0.0.1";
@@ -233,6 +234,19 @@ function extOf(filename) {
   return base.slice(i).toLowerCase();
 }
 
+async function extractSpreadsheet(data) {
+  const wb = XLSX.read(data, { type: "buffer", cellDates: true });
+  const names = wb.SheetNames || [];
+  if (!names.length) return "";
+  const parts = [];
+  for (const name of names) {
+    parts.push("# " + name);
+    const sheet = wb.Sheets[name];
+    parts.push(sheet ? XLSX.utils.sheet_to_csv(sheet) : "");
+  }
+  return parts.join("\n").trim();
+}
+
 async function extractFileText(filename, data) {
   const ext = extOf(filename);
   if (TEXT_EXTS.has(ext)) {
@@ -251,6 +265,17 @@ async function extractFileText(filename, data) {
       }
     }
   }
+  if (ext === ".xlsx" || ext === ".xls") {
+    try {
+      const text = await extractSpreadsheet(data);
+      if (!text) {
+        return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+      }
+      return { text, supported: true };
+    } catch {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+  }
   return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
 }
 
@@ -265,6 +290,7 @@ async function ingestText(text, opts = {}) {
     }
   }
   const ingestedAt = new Date().toISOString();
+  const unsupported = !!opts.extractUnsupported;
   const note = {
     id: String(Date.now()) + (opts.idSuffix != null ? String(opts.idSuffix) : ""),
     text: trimmed,
@@ -272,8 +298,8 @@ async function ingestText(text, opts = {}) {
     ingestedAt,
     source: opts.source || "paste",
     tags: [],
-    summary: null,
-    classifyError: CLASSIFY_FAIL,
+    summary: unsupported ? UNSUPPORTED_BODY : null,
+    classifyError: unsupported ? null : CLASSIFY_FAIL,
   };
   if (opts.source === "file") {
     note.filename = basenameOnly(opts.filename);
@@ -283,6 +309,9 @@ async function ingestText(text, opts = {}) {
   }
   store.notes.unshift(note);
   save(store);
+  if (unsupported) {
+    return { status: 200, body: { ok: true, note, classified: false, question: null } };
+  }
   const result = await classify(trimmed);
   const next = load();
   const row = next.notes.find((n) => n.id === note.id) || note;
@@ -728,6 +757,7 @@ const server = http.createServer(async (req, res) => {
         filename,
         bytes: part.data.length,
         fileModifiedAt,
+        extractUnsupported: !extracted.supported,
         idSuffix: "-" + i + "-" + Math.random().toString(36).slice(2, 7),
       });
       if (out.status === 409) {

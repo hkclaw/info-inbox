@@ -277,6 +277,36 @@
     }
     #dump .go { min-width: 88px; }
     #dumpFile { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+    #dump .staged {
+      list-style: none;
+      margin: 12px 0 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #dump .staged li {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: color-mix(in srgb, var(--paper-ink) 78%, transparent);
+    }
+    #dump .staged .staged-meta {
+      flex: 1;
+      min-width: 0;
+      word-break: break-all;
+    }
+    #dump .staged .staged-meta strong {
+      font-weight: 600;
+      color: var(--paper-ink);
+    }
+    #dump .staged .staged-meta span {
+      opacity: 0.85;
+    }
 
     /* ——— Forms & controls ——— */
     textarea, input[type=search] {
@@ -477,6 +507,7 @@
         <div class="paper" id="dumpPaper">
           <input type="file" id="dumpFile" multiple>
           <textarea id="dumpText" placeholder="貼一大段文字，或拖檔入嚟"></textarea>
+          <ul id="dumpStaged" class="staged" hidden></ul>
           <div class="paper-foot">
             <div class="file-actions">
               <button class="dim" type="button" id="dumpPick">揀檔</button>
@@ -596,6 +627,21 @@ function setTagFilter(tag) {
 
 let highlightId = "";
 
+function formatHkDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const s = d.toLocaleString("sv-SE", { timeZone: "Asia/Hong_Kong", hour12: false });
+  return s.slice(0, 16);
+}
+
+function formatBytes(n) {
+  const b = Number(n) || 0;
+  if (b < 1024) return b + " B";
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1).replace(/\.0$/, "") + " KB";
+  return (b / (1024 * 1024)).toFixed(1).replace(/\.0$/, "") + " MB";
+}
+
 function noteCard(n, withDelete) {
   const art = document.createElement("article");
   art.dataset.noteId = n.id;
@@ -603,10 +649,15 @@ function noteCard(n, withDelete) {
   const meta = document.createElement("div");
   meta.className = "meta";
   const metaBits = [];
-  const dateShow = n.fileModifiedAt || n.ingestedAt || n.createdAt || "";
-  if (dateShow) metaBits.push(dateShow);
-  if (n.filename) metaBits.push(n.filename);
-  if (n.classifyError) metaBits.push(n.classifyError);
+  if (n.filename) {
+    metaBits.push(n.filename);
+    if (n.bytes != null && n.bytes !== "") metaBits.push(formatBytes(n.bytes));
+    const dateShow = n.fileModifiedAt || n.ingestedAt || n.createdAt || "";
+    if (dateShow) metaBits.push(formatHkDate(dateShow));
+  } else {
+    const dateShow = n.ingestedAt || n.createdAt || "";
+    if (dateShow) metaBits.push(formatHkDate(dateShow));
+  }
   meta.textContent = metaBits.join(" · ");
   const tags = document.createElement("div");
   (n.tags || []).forEach((t) => {
@@ -622,6 +673,13 @@ function noteCard(n, withDelete) {
     tags.appendChild(s);
   });
   art.appendChild(meta);
+  if (n.classifyError) {
+    const errLine = document.createElement("div");
+    errLine.className = "err";
+    errLine.style.margin = "4px 0 0";
+    errLine.textContent = n.classifyError;
+    art.appendChild(errLine);
+  }
   if (n.summary) {
     const sum = document.createElement("div");
     sum.className = "sum";
@@ -941,40 +999,60 @@ document.getElementById("noteFilterClear").addEventListener("click", () => {
   loadNotes();
 });
 
-async function ingestDump(confirmDup) {
-  const msg = document.getElementById("dumpMsg");
-  const dupEl = document.getElementById("dumpDup");
-  const text = document.getElementById("dumpText").value;
-  msg.hidden = true;
-  msg.classList.remove("ok");
-  dupEl.hidden = true;
-  pendingFiles = null;
-  pendingFileConfirm = false;
-  const body = { text };
-  if (confirmDup) body.confirm = true;
-  const r = await fetch("/api/ingest", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (r.status === 409) {
-    dupEl.hidden = false;
+let stagedFiles = []; // { id, file, name, bytes, fileModifiedAt }
+let pendingPasteConfirm = false;
+let pendingFileDupFrom = -1;
+
+function renderStaged() {
+  const el = document.getElementById("dumpStaged");
+  if (!stagedFiles.length) {
+    el.hidden = true;
+    el.replaceChildren();
     return;
   }
-  if (!r.ok) {
-    msg.hidden = false;
-    msg.textContent = data.error || "存唔到";
-    return;
-  }
-  document.getElementById("dumpText").value = "";
-  showIngestResult(msg, data);
-  showTab("notes");
-  loadNotes();
-  refreshPendingBadge();
+  el.hidden = false;
+  el.replaceChildren(...stagedFiles.map((row) => {
+    const li = document.createElement("li");
+    const meta = document.createElement("div");
+    meta.className = "staged-meta";
+    const name = document.createElement("strong");
+    name.textContent = row.name;
+    const rest = document.createElement("span");
+    const bits = [formatBytes(row.bytes)];
+    if (row.fileModifiedAt) bits.push(formatHkDate(row.fileModifiedAt));
+    rest.textContent = " · " + bits.join(" · ");
+    meta.appendChild(name);
+    meta.appendChild(rest);
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "dim";
+    rm.textContent = "移除";
+    rm.addEventListener("click", () => {
+      stagedFiles = stagedFiles.filter((x) => x.id !== row.id);
+      renderStaged();
+    });
+    li.appendChild(meta);
+    li.appendChild(rm);
+    return li;
+  }));
 }
 
-function showIngestResult(msg, data) {
+function stageFiles(fileList) {
+  const files = [...(fileList || [])].filter(Boolean);
+  if (!files.length) return;
+  for (const file of files) {
+    stagedFiles.push({
+      id: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8),
+      file,
+      name: file.name || "file",
+      bytes: file.size || 0,
+      fileModifiedAt: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+    });
+  }
+  renderStaged();
+}
+
+function showIngestResult(msg, data, fileCount) {
   msg.hidden = false;
   const note = data.note || (data.results && data.results[0] && data.results[0].note);
   const question = data.question || (data.results || []).some((x) => x.question);
@@ -984,67 +1062,149 @@ function showIngestResult(msg, data) {
     msg.textContent = "已存，有待答問題";
   } else {
     msg.classList.add("ok");
-    const n = data.results ? data.results.length : 1;
+    const n = fileCount != null ? fileCount : (data.results ? data.results.length : 1);
     msg.textContent = n > 1 ? "已存 " + n + " 個檔" : "已分類";
   }
 }
 
-let pendingFiles = null;
-let pendingFileConfirm = false;
-
-async function ingestFiles(fileList, confirmDup) {
+async function ingestPasteOnly(confirmDup) {
   const msg = document.getElementById("dumpMsg");
   const dupEl = document.getElementById("dumpDup");
-  const files = [...(fileList || [])].filter(Boolean);
-  if (!files.length) return;
+  const text = document.getElementById("dumpText").value;
   msg.hidden = true;
   msg.classList.remove("ok");
   dupEl.hidden = true;
-  pendingFiles = files;
-  pendingFileConfirm = !!confirmDup;
+  pendingPasteConfirm = false;
+  pendingFileDupFrom = -1;
+  const body = { text };
+  if (confirmDup) body.confirm = true;
+  const r = await fetch("/api/ingest", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 409) {
+    pendingPasteConfirm = true;
+    dupEl.hidden = false;
+    return { ok: false, dup: true };
+  }
+  if (!r.ok) {
+    msg.hidden = false;
+    msg.textContent = data.error || "存唔到";
+    return { ok: false };
+  }
+  document.getElementById("dumpText").value = "";
+  return { ok: true, data };
+}
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
+async function ingestStagedFiles(fromIndex, confirmDup) {
+  const msg = document.getElementById("dumpMsg");
+  const dupEl = document.getElementById("dumpDup");
+  const results = [];
+  let confirmNext = !!confirmDup;
+  for (let i = Math.max(0, fromIndex | 0); i < stagedFiles.length; i++) {
+    const row = stagedFiles[i];
+    const file = row.file;
     const fd = new FormData();
-    fd.append("file", file, file.name);
-    if (file.lastModified) {
-      fd.append("fileModifiedAt", new Date(file.lastModified).toISOString());
-    }
-    if (confirmDup || pendingFileConfirm) fd.append("confirm", "true");
+    fd.append("file", file, row.name);
+    if (row.fileModifiedAt) fd.append("fileModifiedAt", row.fileModifiedAt);
+    if (confirmNext) fd.append("confirm", "true");
     const r = await fetch("/api/ingest-files", { method: "POST", body: fd });
     const data = await r.json().catch(() => ({}));
     if (r.status === 409) {
-      pendingFiles = files.slice(i);
-      pendingFileConfirm = false;
+      pendingFileDupFrom = i;
+      pendingPasteConfirm = false;
       dupEl.hidden = false;
-      return;
+      return { ok: false, dup: true, results };
     }
     if (!r.ok) {
-      pendingFiles = null;
+      pendingFileDupFrom = -1;
       msg.hidden = false;
-      msg.textContent = (data.error || "存唔到") + (file.name ? "（" + file.name + "）" : "");
+      msg.textContent = (data.error || "存唔到") + (row.name ? "（" + row.name + "）" : "");
+      return { ok: false, results };
+    }
+    confirmNext = false;
+    pendingFileDupFrom = -1;
+    results.push(data);
+  }
+  return { ok: true, results };
+}
+
+async function dumpSave(confirmDup) {
+  const msg = document.getElementById("dumpMsg");
+  const dupEl = document.getElementById("dumpDup");
+  msg.hidden = true;
+  msg.classList.remove("ok");
+  dupEl.hidden = true;
+
+  const hasStaged = stagedFiles.length > 0;
+  const text = document.getElementById("dumpText").value.trim();
+
+  if (!hasStaged) {
+    const out = await ingestPasteOnly(confirmDup);
+    if (!out.ok) return;
+    showIngestResult(msg, out.data);
+    showTab("notes");
+    loadNotes();
+    refreshPendingBadge();
+    return;
+  }
+
+  const start = confirmDup && pendingFileDupFrom >= 0 ? pendingFileDupFrom : 0;
+  const fileOut = await ingestStagedFiles(start, confirmDup && pendingFileDupFrom >= 0);
+  if (!fileOut.ok) return;
+
+  let pasteData = null;
+  if (text) {
+    const pasteOut = await ingestPasteOnly(false);
+    if (pasteOut.dup) {
+      // files already ingested; keep staged cleared after we decide — wait until paste ok
+      // leave staged as-is until paste confirmed? Files already saved — clear staged now
+      stagedFiles = [];
+      renderStaged();
       return;
     }
-    // after first confirmed file, remaining in this batch still need confirm only if they dup
-    confirmDup = false;
-    pendingFileConfirm = false;
-    if (i === files.length - 1) {
-      pendingFiles = null;
-      showIngestResult(msg, data);
+    if (!pasteOut.ok) {
+      stagedFiles = [];
+      renderStaged();
+      return;
     }
+    pasteData = pasteOut.data;
   }
+
+  const fileCount = fileOut.results.length + (pasteData ? 1 : 0);
+  stagedFiles = [];
+  renderStaged();
+  if (pasteData) showIngestResult(msg, pasteData, fileCount);
+  else showIngestResult(msg, fileOut.results[fileOut.results.length - 1] || { results: fileOut.results }, fileCount);
   showTab("notes");
   loadNotes();
   refreshPendingBadge();
 }
 
-document.getElementById("dumpGo").addEventListener("click", () => ingestDump(false));
+document.getElementById("dumpGo").addEventListener("click", () => {
+  pendingFileDupFrom = -1;
+  pendingPasteConfirm = false;
+  dumpSave(false);
+});
 document.getElementById("dumpConfirm").addEventListener("click", () => {
-  if (pendingFiles && pendingFiles.length) {
-    ingestFiles(pendingFiles, true);
+  if (pendingFileDupFrom >= 0) {
+    dumpSave(true);
     return;
   }
-  ingestDump(true);
+  if (pendingPasteConfirm) {
+    ingestPasteOnly(true).then((out) => {
+      if (!out.ok) return;
+      const msg = document.getElementById("dumpMsg");
+      showIngestResult(msg, out.data);
+      showTab("notes");
+      loadNotes();
+      refreshPendingBadge();
+    });
+    return;
+  }
+  dumpSave(true);
 });
 
 const dumpPaper = document.getElementById("dumpPaper");
@@ -1052,7 +1212,7 @@ const dumpFile = document.getElementById("dumpFile");
 document.getElementById("dumpPick").addEventListener("click", () => dumpFile.click());
 dumpFile.addEventListener("change", () => {
   const list = dumpFile.files;
-  if (list && list.length) ingestFiles(list, false);
+  if (list && list.length) stageFiles(list);
   dumpFile.value = "";
 });
 let dragDepth = 0;
@@ -1078,7 +1238,7 @@ dumpPaper.addEventListener("drop", (e) => {
   dragDepth = 0;
   dumpPaper.classList.remove("drag");
   const list = e.dataTransfer && e.dataTransfer.files;
-  if (list && list.length) ingestFiles(list, false);
+  if (list && list.length) stageFiles(list);
 });
 
 document.getElementById("searchForm").addEventListener("submit", async (e) => {
