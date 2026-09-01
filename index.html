@@ -273,6 +273,19 @@
     #dump .paper-foot .model-pick select:disabled {
       opacity: 0.55;
     }
+    #dump .paper-foot .model-pick input {
+      max-width: 160px;
+      padding: 5px 8px;
+      border: 1px solid color-mix(in srgb, var(--paper-ink) 18%, transparent);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--paper-ink);
+      font: inherit;
+      font-size: 13px;
+    }
+    #boxChips { flex-wrap: wrap; gap: 6px; }
+    .box-name { color: #c98f63; }
+
     #dump .paper-foot .ollama-setup {
       flex: 1 1 100%;
       margin: 0;
@@ -641,6 +654,10 @@
           <div class="paper-foot">
             <div class="file-actions">
               <button class="dim" type="button" id="dumpPick">揀檔</button>
+              <label class="model-pick">盒
+                <input id="dumpBox" list="dumpBoxList" placeholder="未分盒" autocomplete="off" aria-label="current box">
+                <datalist id="dumpBoxList"></datalist>
+              </label>
               <label class="model-pick">模型
                 <select id="ollamaModel" disabled aria-label="Ollama model"></select>
               </label>
@@ -662,6 +679,7 @@
       </section>
       <section id="notes">
         <p id="noteFilter" hidden><span id="noteFilterLabel"></span> <button type="button" class="dim" id="noteFilterClear">清篩選／顯示全部</button></p>
+        <p class="row" id="boxChips"></p>
         <p class="row" id="reclassRow"><button type="button" class="dim" id="reclassMissing">重新分類未分類</button></p>
         <div id="notesList" class="empty">未有筆記。去傾倒貼一段文字。</div>
       </section>
@@ -844,6 +862,55 @@ tabs.forEach((b) => b.addEventListener("click", () => {
 }));
 
 let tagFilter = "";
+let boxFilter = null;
+let knownBoxes = [];
+
+function currentDumpBox() {
+  const inp = document.getElementById("dumpBox");
+  return inp ? String(inp.value || "").trim() : "";
+}
+
+async function refreshBoxes() {
+  const r = await fetch("/api/box");
+  const data = await r.json().catch(() => ({}));
+  knownBoxes = Array.isArray(data.boxes) ? data.boxes : [];
+  const dl = document.getElementById("dumpBoxList");
+  if (dl) {
+    dl.replaceChildren(...knownBoxes.map((b) => {
+      const o = document.createElement("option");
+      o.value = b;
+      return o;
+    }));
+  }
+  const inp = document.getElementById("dumpBox");
+  if (inp && !inp.dataset.touched && data.box) inp.value = data.box;
+}
+
+function renderBoxChips(notes) {
+  const el = document.getElementById("boxChips");
+  if (!el) return;
+  const names = [];
+  (notes || []).forEach((n) => {
+    const b = String(n.box || "").trim();
+    if (b && !names.includes(b)) names.push(b);
+  });
+  if (!names.length && boxFilter == null) {
+    el.replaceChildren();
+    return;
+  }
+  function chip(label, value) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "tag" + ((value == null ? boxFilter == null : boxFilter === value) ? " on" : "");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      boxFilter = value;
+      loadNotes();
+    });
+    return b;
+  }
+  el.replaceChildren(chip("全部", null), ...names.map((n) => chip(n, n)));
+}
 
 function setTagFilter(tag) {
   tagFilter = tag || "";
@@ -882,6 +949,7 @@ function noteCard(n, withDelete) {
   const meta = document.createElement("div");
   meta.className = "meta";
   const metaBits = [];
+  if (n.box) metaBits.push(n.box);
   if (n.filename) {
     metaBits.push(n.filename);
     if (n.bytes != null && n.bytes !== "") metaBits.push(formatBytes(n.bytes));
@@ -1018,7 +1086,35 @@ function noteCard(n, withDelete) {
     });
     art.appendChild(ta);
     art.appendChild(saveRow);
+    const boxInp = document.createElement("input");
+    boxInp.type = "text";
+    boxInp.setAttribute("list", "dumpBoxList");
+    boxInp.value = n.box || "";
+    boxInp.placeholder = "未分盒";
+    boxInp.style.maxWidth = "140px";
+    const boxBtn = document.createElement("button");
+    boxBtn.type = "button";
+    boxBtn.className = "dim";
+    boxBtn.textContent = "改盒";
+    boxBtn.addEventListener("click", async () => {
+      err.hidden = true;
+      const r = await fetch("/api/notes/" + encodeURIComponent(n.id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ box: boxInp.value }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        err.hidden = false;
+        err.textContent = data.error || "改唔到";
+        return;
+      }
+      await refreshBoxes();
+      loadNotes();
+    });
     row.appendChild(edit);
+    row.appendChild(boxInp);
+    row.appendChild(boxBtn);
     const del = document.createElement("button");
     del.type = "button";
     del.className = "del";
@@ -1179,11 +1275,14 @@ async function loadNotes() {
   }
   const r = await fetch("/api/notes");
   const data = await r.json();
-  let notes = data.notes || [];
+  const all = data.notes || [];
+  renderBoxChips(all);
+  let notes = all;
+  if (boxFilter != null) notes = notes.filter((n) => String(n.box || "") === boxFilter);
   if (tagFilter) notes = notes.filter((n) => (n.tags || []).includes(tagFilter));
   if (!notes.length) {
     el.className = "empty";
-    el.textContent = tagFilter ? "呢個 tag 冇筆記。" : "未有筆記。去傾倒貼一段文字。";
+    el.textContent = boxFilter != null ? "呢個盒冇筆記。" : (tagFilter ? "呢個 tag 冇筆記。" : "未有筆記。去傾倒貼一段文字。");
     return;
   }
   el.className = "";
@@ -1801,7 +1900,7 @@ async function ingestPasteOnly(confirmDup) {
   dupEl.hidden = true;
   pendingPasteConfirm = false;
   pendingFileDupFrom = -1;
-  const body = { text };
+  const body = { text, box: currentDumpBox() };
   if (confirmDup) body.confirm = true;
   const pipe = { id: "paste-" + Date.now(), name: "貼上", stage: "classify" };
   dumpPipeItems.push(pipe);
@@ -1854,6 +1953,7 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
     fd.append("file", file, row.name);
     if (row.fileModifiedAt) fd.append("fileModifiedAt", row.fileModifiedAt);
     if (confirmNext) fd.append("confirm", "true");
+    fd.append("box", currentDumpBox());
     const r = await fetch("/api/ingest-files", { method: "POST", body: fd });
     const data = await r.json().catch(() => ({}));
     clearTimeout(late);
@@ -1951,6 +2051,7 @@ async function dumpSave(confirmDup) {
     loadNotes();
     refreshPendingBadge();
     refreshDumpOnboard();
+    refreshBoxes();
     return;
   }
 
@@ -1986,6 +2087,7 @@ async function dumpSave(confirmDup) {
   loadNotes();
   refreshPendingBadge();
   refreshDumpOnboard();
+  refreshBoxes();
   } finally {
     stopDumpWait();
     const goBtn = document.getElementById("dumpGo");
@@ -2172,7 +2274,20 @@ document.getElementById("backup").addEventListener("click", async () => {
 
 refreshPendingBadge();
 loadOllamaModels();
+refreshBoxes();
 refreshDumpOnboard();
+const dumpBoxEl = document.getElementById("dumpBox");
+if (dumpBoxEl) {
+  dumpBoxEl.addEventListener("input", () => { dumpBoxEl.dataset.touched = "1"; });
+  dumpBoxEl.addEventListener("change", () => {
+    dumpBoxEl.dataset.touched = "1";
+    fetch("/api/box", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ box: dumpBoxEl.value }),
+    }).catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

@@ -16,6 +16,7 @@ const PORT = Number(process.env.PORT || 3741);
 const dataDir = path.join(root, "data");
 const storeFile = path.join(dataDir, "inbox.json");
 const modelFile = path.join(dataDir, "ollama-model.json");
+const boxFile = path.join(dataDir, "current-box.json");
 const vectorFile = path.join(dataDir, "vectors.json");
 const EMBED_MODEL = process.env.OLLAMA_EMBED || "nomic-embed-text";
 const OLLAMA = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
@@ -58,6 +59,34 @@ function saveModelPreference(model) {
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(modelFile, JSON.stringify({ model: name }, null, 2));
 }
+
+function normalizeBox(s) {
+  return String(s || "").trim().replace(/\s+/g, " ").slice(0, 40);
+}
+
+function loadCurrentBox() {
+  try {
+    const s = JSON.parse(fs.readFileSync(boxFile, "utf8"));
+    return normalizeBox(s && s.box);
+  } catch {
+    return "";
+  }
+}
+
+function saveCurrentBox(box) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(boxFile, JSON.stringify({ box: normalizeBox(box) }, null, 2));
+}
+
+function listBoxes(store) {
+  const out = [];
+  for (const n of (store && store.notes) || []) {
+    const b = normalizeBox(n.box);
+    if (b && !out.includes(b)) out.push(b);
+  }
+  return out;
+}
+
 
 function isDefaultModelName(name) {
   const n = String(name || "");
@@ -114,6 +143,7 @@ function load() {
     if (!Array.isArray(s.notes)) s.notes = [];
     if (!Array.isArray(s.questions)) s.questions = [];
     if (!Array.isArray(s.dismissedMerges)) s.dismissedMerges = [];
+    for (const n of s.notes) n.box = normalizeBox(n.box);
     return s;
   } catch {
     return emptyStore();
@@ -648,6 +678,7 @@ async function ingestText(text, opts = {}) {
     tags: [],
     summary: unsupported ? UNSUPPORTED_BODY : null,
     classifyError: unsupported ? null : CLASSIFY_FAIL,
+    box: normalizeBox(opts.box != null ? opts.box : loadCurrentBox()),
   };
   if (opts.source === "file") {
     note.filename = basenameOnly(opts.filename);
@@ -1015,6 +1046,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "GET" && u.pathname === "/api/box") {
+    json(res, 200, { box: loadCurrentBox(), boxes: listBoxes(load()) });
+    return;
+  }
+
+  if (method === "PUT" && u.pathname === "/api/box") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const box = normalizeBox(payload.box);
+    saveCurrentBox(box);
+    json(res, 200, { ok: true, box, boxes: listBoxes(load()) });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/models") {
     const listed = await listOllamaModels();
     if (!listed.ok) {
@@ -1087,6 +1137,9 @@ const server = http.createServer(async (req, res) => {
         if (Array.isArray(vec) && vec.length) nextVectors[id] = vec;
       }
     }
+    payload.notes.forEach((n) => {
+      if (n && typeof n === "object") n.box = normalizeBox(n.box);
+    });
     save({ notes: payload.notes, questions: payload.questions, dismissedMerges });
     saveVectors(nextVectors);
     json(res, 200, { ok: true });
@@ -1107,6 +1160,7 @@ const server = http.createServer(async (req, res) => {
     }
     save(emptyStore());
     saveVectors({});
+    saveCurrentBox("");
     json(res, 200, { ok: true });
     return;
   }
@@ -1163,8 +1217,9 @@ const server = http.createServer(async (req, res) => {
       json(res, 400, { error: "JSON 唔啱" });
       return;
     }
-    const text = String(payload.text || "").trim();
-    if (!text) {
+    const hasText = Object.prototype.hasOwnProperty.call(payload, "text");
+    const hasBox = Object.prototype.hasOwnProperty.call(payload, "box");
+    if (!hasText && !hasBox) {
       json(res, 400, { error: "要有文字" });
       return;
     }
@@ -1174,9 +1229,17 @@ const server = http.createServer(async (req, res) => {
       json(res, 404, { error: "搵唔到呢條筆記" });
       return;
     }
-    row.text = text;
+    if (hasText) {
+      const text = String(payload.text || "").trim();
+      if (!text) {
+        json(res, 400, { error: "要有文字" });
+        return;
+      }
+      row.text = text;
+    }
+    if (hasBox) row.box = normalizeBox(payload.box);
     save(store);
-    await embedNote(row.id, text);
+    if (hasText) await embedNote(row.id, row.text || "");
     json(res, 200, { ok: true, note: row });
     return;
   }
@@ -1412,6 +1475,7 @@ const server = http.createServer(async (req, res) => {
     const rewritten = await maybeRewriteSummary(text);
     if (rewritten) keep.summary = rewritten;
     else if (!keep.summary && drop.summary) keep.summary = drop.summary;
+    if (!normalizeBox(keep.box) && normalizeBox(drop.box)) keep.box = normalizeBox(drop.box);
     const dropKey = drop.id;
     store.notes = store.notes.filter((n) => n.id !== dropKey);
     store.dismissedMerges = store.dismissedMerges.filter((k) => !k.split("|").includes(dropKey) && !k.split("|").includes(keep.id));
@@ -1430,9 +1494,12 @@ const server = http.createServer(async (req, res) => {
       json(res, 400, { error: "JSON 唔啱" });
       return;
     }
+    const box = normalizeBox(payload.box != null ? payload.box : loadCurrentBox());
+    saveCurrentBox(box);
     const out = await ingestText(payload.text, {
       confirm: !!payload.confirm,
       source: "paste",
+      box,
     });
     json(res, out.status, out.body);
     return;
@@ -1461,6 +1528,9 @@ const server = http.createServer(async (req, res) => {
     const confirm = parts.some(
       (p) => p.name === "confirm" && !p.filename && /^(1|true|yes)$/i.test(p.data.toString("utf8").trim())
     );
+    const boxPart = parts.find((p) => p.name === "box" && !p.filename);
+    const box = normalizeBox(boxPart ? boxPart.data.toString("utf8") : loadCurrentBox());
+    saveCurrentBox(box);
     const modifiedParts = parts.filter((p) => p.name === "fileModifiedAt" && !p.filename);
     const fileParts = parts.filter((p) => p.filename != null && (p.name === "file" || p.name === "files"));
     if (!fileParts.length) {
@@ -1486,6 +1556,7 @@ const server = http.createServer(async (req, res) => {
       const out = await ingestText(extracted.text, {
         confirm,
         source: "file",
+        box,
         filename,
         bytes: part.data.length,
         fileModifiedAt,

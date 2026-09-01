@@ -54,6 +54,6 @@ Click 「下載備份」 on the page (GET /api/export). One JSON file with notes
 
 ## Data
 
-JSON file under data/ (gitignored). Notes: id, text, createdAt, ingestedAt, source (paste | file), filename/ext/bytes/fileModifiedAt (file only), tags, summary, classifyError, clarifications. Questions: id, text, status (open | answered), answer, noteId, createdAt, suggestions, suggestError. dismissedMerges stores dismissed pair keys.
+JSON file under data/ (gitignored). Notes: id, text, createdAt, ingestedAt, source (paste | file), filename/ext/bytes/fileModifiedAt (file only), tags, summary, classifyError, clarifications, box (empty = unboxed). Dump picks or types a current box; Notes filters by box chips plus 「全部」. Export/import keep box. No nested boxes. Questions: id, text, status (open | answered), answer, noteId, createdAt, suggestions, suggestError. dismissedMerges stores dismissed pair keys.
 
 Merge later means overlapping notes, not rewriting the whole inbox.
