@@ -690,6 +690,7 @@
         </form>
         <p id="embedHint" class="ollama-setup" hidden>未有 embedder。本機跑 <code>ollama pull nomic-embed-text</code>。11434 通就照 keyword 搜。</p>
         <p id="embedBackfill" class="ollama-setup" hidden></p>
+        <p class="row" id="searchBoxChips"></p>
         <div id="searchList" class="empty">未搜。輸入關鍵字搵筆記同問題。</div>
       </section>
       <section id="pending">
@@ -858,7 +859,10 @@ tabs.forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.tab === "pending") loadPending();
   if (b.dataset.tab === "merge") loadMerge();
   if (b.dataset.tab === "graph") loadGraph();
-  if (b.dataset.tab === "search") refreshEmbedHint();
+  if (b.dataset.tab === "search") {
+    refreshEmbedHint();
+    fetch("/api/notes").then((r) => r.json()).then((d) => renderBoxChips(d.notes || [])).catch(() => {});
+  }
 }));
 
 let tagFilter = "";
@@ -886,30 +890,59 @@ async function refreshBoxes() {
   if (inp && !inp.dataset.touched && data.box) inp.value = data.box;
 }
 
-function renderBoxChips(notes) {
-  const el = document.getElementById("boxChips");
-  if (!el) return;
+function namedBoxesOf(notes) {
   const names = [];
   (notes || []).forEach((n) => {
     const b = String(n.box || "").trim();
     if (b && !names.includes(b)) names.push(b);
   });
-  if (!names.length && boxFilter == null) {
+  return names;
+}
+
+function fillBoxChipBar(el, notes, onPick) {
+  if (!el) return;
+  const names = namedBoxesOf(notes);
+  const hasNotes = (notes || []).length > 0;
+  if (!hasNotes && boxFilter == null) {
     el.replaceChildren();
     return;
   }
   function chip(label, value) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "tag" + ((value == null ? boxFilter == null : boxFilter === value) ? " on" : "");
+    const on = value == null ? boxFilter == null : boxFilter === value;
+    b.className = "tag" + (on ? " on" : "");
     b.textContent = label;
     b.addEventListener("click", () => {
       boxFilter = value;
-      loadNotes();
+      onPick();
     });
     return b;
   }
-  el.replaceChildren(chip("全部", null), ...names.map((n) => chip(n, n)));
+  const nodes = [chip("全部", null), ...names.map((n) => chip(n, n))];
+  if (hasNotes) nodes.push(chip("未分類", ""));
+  el.replaceChildren(...nodes);
+}
+
+function renderBoxChips(notes) {
+  fillBoxChipBar(document.getElementById("boxChips"), notes, () => {
+    loadNotes();
+    replaySearch();
+  });
+  fillBoxChipBar(document.getElementById("searchBoxChips"), notes, () => {
+    loadNotes();
+    replaySearch();
+  });
+}
+
+let lastSearchQ = "";
+function replaySearch() {
+  const form = document.getElementById("searchForm");
+  const q = document.getElementById("q");
+  if (!form || !q || !String(q.value || lastSearchQ).trim()) return;
+  if (document.getElementById("search") && document.getElementById("search").classList.contains("on")) {
+    form.requestSubmit();
+  }
 }
 
 function setTagFilter(tag) {
@@ -1086,22 +1119,12 @@ function noteCard(n, withDelete) {
     });
     art.appendChild(ta);
     art.appendChild(saveRow);
-    const boxInp = document.createElement("input");
-    boxInp.type = "text";
-    boxInp.setAttribute("list", "dumpBoxList");
-    boxInp.value = n.box || "";
-    boxInp.placeholder = "未分盒";
-    boxInp.style.maxWidth = "140px";
-    const boxBtn = document.createElement("button");
-    boxBtn.type = "button";
-    boxBtn.className = "dim";
-    boxBtn.textContent = "改盒";
-    boxBtn.addEventListener("click", async () => {
+    async function patchNoteBox(box) {
       err.hidden = true;
       const r = await fetch("/api/notes/" + encodeURIComponent(n.id), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ box: boxInp.value }),
+        body: JSON.stringify({ box }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -1111,10 +1134,37 @@ function noteCard(n, withDelete) {
       }
       await refreshBoxes();
       loadNotes();
+    }
+    const boxRow = document.createElement("div");
+    boxRow.className = "row";
+    const current = String(n.box || "").trim();
+    knownBoxes.forEach((name) => {
+      const c = document.createElement("button");
+      c.type = "button";
+      c.className = "tag" + (current === name ? " on" : "");
+      c.textContent = name;
+      c.addEventListener("click", () => patchNoteBox(name));
+      boxRow.appendChild(c);
     });
+    const none = document.createElement("button");
+    none.type = "button";
+    none.className = "tag" + (current ? "" : " on");
+    none.textContent = "未分類";
+    none.addEventListener("click", () => patchNoteBox(""));
+    boxRow.appendChild(none);
+    const newInp = document.createElement("input");
+    newInp.type = "text";
+    newInp.placeholder = "新盒";
+    newInp.style.maxWidth = "120px";
+    newInp.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const v = String(newInp.value || "").trim();
+      if (v) patchNoteBox(v);
+    });
+    boxRow.appendChild(newInp);
+    art.appendChild(boxRow);
     row.appendChild(edit);
-    row.appendChild(boxInp);
-    row.appendChild(boxBtn);
     const del = document.createElement("button");
     del.type = "button";
     del.className = "del";
@@ -1276,13 +1326,14 @@ async function loadNotes() {
   const r = await fetch("/api/notes");
   const data = await r.json();
   const all = data.notes || [];
+  knownBoxes = namedBoxesOf(all);
   renderBoxChips(all);
   let notes = all;
   if (boxFilter != null) notes = notes.filter((n) => String(n.box || "") === boxFilter);
   if (tagFilter) notes = notes.filter((n) => (n.tags || []).includes(tagFilter));
   if (!notes.length) {
     el.className = "empty";
-    el.textContent = boxFilter != null ? "呢個盒冇筆記。" : (tagFilter ? "呢個 tag 冇筆記。" : "未有筆記。去傾倒貼一段文字。");
+    el.textContent = boxFilter != null ? (boxFilter === "" ? "未分類冇筆記。" : "呢個盒冇筆記。") : (tagFilter ? "呢個 tag 冇筆記。" : "未有筆記。去傾倒貼一段文字。");
     return;
   }
   el.className = "";
@@ -2201,9 +2252,11 @@ document.getElementById("searchForm").addEventListener("submit", async (e) => {
     el.textContent = "未搜。輸入關鍵字搵筆記同問題。";
     return;
   }
+  lastSearchQ = q;
   const r = await fetch("/api/search?q=" + encodeURIComponent(q));
   const data = await r.json();
-  const notes = data.notes || [];
+  let notes = data.notes || [];
+  if (boxFilter != null) notes = notes.filter((n) => String(n.box || "") === boxFilter);
   const questions = data.questions || [];
   if (!notes.length && !questions.length) {
     el.className = "empty";
