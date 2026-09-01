@@ -1229,16 +1229,37 @@ const server = http.createServer(async (req, res) => {
 
   if (method === "GET" && u.pathname === "/api/export") {
     const store = load();
+    const vecAll = loadVectors();
+    let notes = store.notes;
+    let questions = store.questions;
+    let dismissedMerges = store.dismissedMerges;
+    let vectors = vecAll;
+    let filename = "info-inbox-backup.json";
+    if (u.searchParams.has("box")) {
+      const want = normalizeBox(u.searchParams.get("box"));
+      notes = store.notes.filter((n) => normalizeBox(n.box) === want);
+      const ids = new Set(notes.map((n) => n.id));
+      questions = (store.questions || []).filter((q) => q.noteId && ids.has(q.noteId));
+      dismissedMerges = (store.dismissedMerges || []).filter((k) => {
+        const parts = String(k).split("|");
+        return parts.length === 2 && ids.has(parts[0]) && ids.has(parts[1]);
+      });
+      vectors = {};
+      for (const id of ids) {
+        if (Array.isArray(vecAll[id]) && vecAll[id].length) vectors[id] = vecAll[id];
+      }
+      filename = want ? "info-inbox-box-" + want.replace(/[^\w\u4e00-\u9fff-]+/g, "_").slice(0, 40) + ".json" : "info-inbox-unclassified.json";
+    }
     const body = JSON.stringify({
-      notes: store.notes,
-      questions: store.questions,
-      dismissedMerges: store.dismissedMerges,
-      vectors: loadVectors(),
+      notes,
+      questions,
+      dismissedMerges,
+      vectors,
       exportedAt: new Date().toISOString(),
     }, null, 2);
     res.writeHead(200, {
       "content-type": "application/json; charset=utf-8",
-      "content-disposition": 'attachment; filename="info-inbox-backup.json"',
+      "content-disposition": 'attachment; filename="' + filename.replace(/"/g, "") + '"',
       "cache-control": "no-store",
     });
     res.end(body);

@@ -633,6 +633,7 @@
       <p id="ollamaLive" class="ollama-live down">連唔到 Ollama（127.0.0.1:11434）</p>
       <div class="head-actions">
         <button type="button" class="backup" id="backup">下載備份</button>
+        <button type="button" class="backup" id="exportBox" hidden>匯出呢個盒</button>
         <button type="button" class="backup" id="restoreBackup">還原備份</button>
         <button type="button" class="backup" id="wipeLocal">清空本機資料</button>
       </div>
@@ -955,8 +956,12 @@ function fillBoxChipBar(el, notes, onPick) {
     });
     return b;
   }
-  const nodes = [chip("全部", null), ...names.map((n) => chip(n, n))];
-  if (hasNotes) nodes.push(chip("未分類", ""));
+  function countFor(value) {
+    if (value == null) return (notes || []).length;
+    return (notes || []).filter((n) => String(n.box || "") === value).length;
+  }
+  const nodes = [chip("全部 " + countFor(null), null), ...names.map((n) => chip(n + " " + countFor(n), n))];
+  if (hasNotes) nodes.push(chip("未分類 " + countFor(""), ""));
   el.replaceChildren(...nodes);
 }
 
@@ -978,6 +983,8 @@ function syncBoxManage() {
     const inp = row.querySelector(".box-rename");
     if (inp && named) inp.value = boxFilter;
   });
+  const exp = document.getElementById("exportBox");
+  if (exp) exp.hidden = boxFilter == null;
 }
 
 function renderBoxChips(notes) {
@@ -2412,7 +2419,7 @@ document.getElementById("restoreFile").addEventListener("change", async () => {
   const file = input.files && input.files[0];
   input.value = "";
   if (!file) return;
-  if (!confirm("呢個會覆蓋而家盒內全部筆記同問題。確認還原？")) return;
+  if (!confirm("呢個會覆蓋全部本機資料（筆記、問題、合併、向量）。確認還原？")) return;
   let res, body;
   try {
     res = await fetch("/api/import", {
@@ -2433,7 +2440,7 @@ document.getElementById("restoreFile").addEventListener("change", async () => {
 });
 
 document.getElementById("wipeLocal").addEventListener("click", async () => {
-  if (!confirm("呢個會刪晒盒內筆記、問題、合併同向量。確認清空？")) return;
+  if (!confirm("呢個會刪晒全部本機資料（筆記、問題、合併、向量）。確認清空？")) return;
   const r = await fetch("/api/wipe", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -2447,15 +2454,25 @@ document.getElementById("wipeLocal").addEventListener("click", async () => {
   location.reload();
 });
 
-document.getElementById("backup").addEventListener("click", async () => {
-  const r = await fetch("/api/export");
+async function downloadExport(url, fallbackName) {
+  const r = await fetch(url);
   if (!r.ok) return;
   const blob = await r.blob();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "info-inbox-backup.json";
+  const disp = r.headers.get("content-disposition") || "";
+  const m = /filename="([^"]+)"/.exec(disp);
+  a.download = (m && m[1]) || fallbackName;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+document.getElementById("backup").addEventListener("click", () => {
+  downloadExport("/api/export", "info-inbox-backup.json");
+});
+document.getElementById("exportBox").addEventListener("click", () => {
+  if (boxFilter == null) return;
+  downloadExport("/api/export?box=" + encodeURIComponent(boxFilter), "info-inbox-box.json");
 });
 
 document.querySelectorAll(".box-manage").forEach((row) => {
