@@ -23,7 +23,7 @@ Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1
 
 ## Classify
 
-Needs a local Ollama. Default model llama3.2 at http://127.0.0.1:11434.
+Needs a local Ollama. Default model llama3.2 at http://127.0.0.1:11434. On Dump you can pick a local Ollama model from the pulled list; default is llama3.2 when it is available.
 
     ollama serve
     ollama pull llama3.2

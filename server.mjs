@@ -9,12 +9,69 @@ const BIND = process.env.BIND || "127.0.0.1";
 const PORT = Number(process.env.PORT || 3741);
 const dataDir = path.join(root, "data");
 const storeFile = path.join(dataDir, "inbox.json");
+const modelFile = path.join(dataDir, "ollama-model.json");
 const OLLAMA = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
-const MODEL = process.env.OLLAMA_MODEL || "llama3.2";
+const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 const OLLAMA_MS = Number(process.env.OLLAMA_MS || 20000);
+const TAGS_MS = Number(process.env.OLLAMA_TAGS_MS || 3000);
 const CLASSIFY_FAIL = "連唔到 Ollama（127.0.0.1:11434）";
 const TEXT_EXTS = new Set([".txt", ".md", ".csv", ".json", ".html", ".log"]);
 const UNSUPPORTED_BODY = "未支援抽文字";
+
+function loadModelPreference() {
+  try {
+    const s = JSON.parse(fs.readFileSync(modelFile, "utf8"));
+    const model = s && s.model != null ? String(s.model).trim() : "";
+    return model || null;
+  } catch {
+    return null;
+  }
+}
+
+function saveModelPreference(model) {
+  const name = String(model || "").trim();
+  if (!name) return;
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(modelFile, JSON.stringify({ model: name }, null, 2));
+}
+
+function isDefaultModelName(name) {
+  const n = String(name || "");
+  return n === "llama3.2" || n.startsWith("llama3.2:");
+}
+
+function pickDefaultModel(models) {
+  const list = Array.isArray(models) ? models : [];
+  const pref = loadModelPreference();
+  if (pref && list.includes(pref)) return pref;
+  const llama = list.find(isDefaultModelName);
+  if (llama) return llama;
+  return list[0] || null;
+}
+
+async function listOllamaModels() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TAGS_MS);
+  try {
+    const r = await fetch(OLLAMA + "/api/tags", { signal: ctrl.signal });
+    if (!r.ok) return { ok: false, models: [] };
+    const data = await r.json();
+    const models = Array.isArray(data && data.models)
+      ? data.models
+          .map((m) => (m && m.name != null ? String(m.name).trim() : ""))
+          .filter(Boolean)
+      : [];
+    return { ok: true, models };
+  } catch {
+    return { ok: false, models: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function getActiveModel() {
+  return loadModelPreference() || DEFAULT_MODEL;
+}
 
 function emptyStore() {
   return { notes: [], questions: [], dismissedMerges: [] };
@@ -279,7 +336,7 @@ async function classify(text) {
       headers: { "content-type": "application/json" },
       signal: ctrl.signal,
       body: JSON.stringify({
-        model: MODEL,
+        model: getActiveModel(),
         stream: false,
         format: "json",
         messages: [
@@ -341,6 +398,48 @@ const server = http.createServer(async (req, res) => {
 
   if (method === "GET" && (u.pathname === "/" || u.pathname === "/index.html")) {
     sendFile(res, path.join(root, "index.html"));
+    return;
+  }
+
+  if (method === "GET" && u.pathname === "/api/models") {
+    const listed = await listOllamaModels();
+    if (!listed.ok) {
+      json(res, 200, { ok: false, models: [], selected: null });
+      return;
+    }
+    const selected = pickDefaultModel(listed.models);
+    if (selected) {
+      const pref = loadModelPreference();
+      if (pref !== selected) saveModelPreference(selected);
+    }
+    json(res, 200, { ok: true, models: listed.models, selected: selected || null });
+    return;
+  }
+
+  if (method === "PUT" && u.pathname === "/api/model") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const wanted = String(payload.model || "").trim();
+    if (!wanted) {
+      json(res, 400, { error: "要有 model" });
+      return;
+    }
+    const listed = await listOllamaModels();
+    if (!listed.ok) {
+      json(res, 503, { error: CLASSIFY_FAIL, models: [] });
+      return;
+    }
+    if (!listed.models.includes(wanted)) {
+      json(res, 400, { error: "唔喺本機 model 列表", models: listed.models });
+      return;
+    }
+    saveModelPreference(wanted);
+    json(res, 200, { ok: true, model: wanted, models: listed.models });
     return;
   }
 
