@@ -17,6 +17,19 @@ const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 const OLLAMA_MS = Number(process.env.OLLAMA_MS || 20000);
 const TAGS_MS = Number(process.env.OLLAMA_TAGS_MS || 3000);
 const CLASSIFY_FAIL = "連唔到 Ollama（127.0.0.1:11434）";
+const CLASSIFY_TIMEOUT = "模型回逾時";
+function classifyHttpError(status) {
+  return "模型回錯誤（HTTP " + status + "）";
+}
+function classifyCatchError(err) {
+  if (err && err.name === "AbortError") return CLASSIFY_TIMEOUT;
+  const code = err && (err.code || (err.cause && err.cause.code));
+  const msg = String((err && err.message) || "");
+  if (code === "ECONNREFUSED" || code === "ENOTFOUND" || /fetch failed|ECONNREFUSED/i.test(msg)) {
+    return CLASSIFY_FAIL;
+  }
+  return "模型回錯誤";
+}
 const TEXT_EXTS = new Set([".txt", ".md", ".csv", ".json", ".html", ".log"]);
 const UNSUPPORTED_BODY = "未支援抽文字";
 
@@ -352,7 +365,7 @@ async function ingestText(text, opts = {}) {
   } else {
     row.tags = [];
     row.summary = null;
-    row.classifyError = CLASSIFY_FAIL;
+    row.classifyError = result.error || CLASSIFY_FAIL;
   }
   save(next);
   return { status: 200, body: { ok: true, note: row, classified: !!result.ok, question: queued } };
@@ -396,7 +409,7 @@ async function classify(text) {
         ],
       }),
     });
-    if (!r.ok) return { ok: false };
+    if (!r.ok) return { ok: false, error: classifyHttpError(r.status) };
     const data = await r.json();
     const raw = data && data.message && data.message.content;
     let parsed;
@@ -404,11 +417,11 @@ async function classify(text) {
       parsed = JSON.parse(raw);
     } catch {
       const m = String(raw || "").match(/\{[\s\S]*\}/);
-      if (!m) return { ok: false };
+      if (!m) return { ok: false, error: "模型回錯誤" };
       try {
         parsed = JSON.parse(m[0]);
       } catch {
-        return { ok: false };
+        return { ok: false, error: "模型回錯誤" };
       }
     }
     const tags = Array.isArray(parsed.tags)
@@ -416,10 +429,10 @@ async function classify(text) {
       : [];
     const summary = parsed.summary ? String(parsed.summary).trim() : "";
     const question = parsed.question ? String(parsed.question).trim() : "";
-    if (!tags.length && !summary && !question) return { ok: false };
+    if (!tags.length && !summary && !question) return { ok: false, error: "模型回錯誤" };
     return { ok: true, tags, summary: summary || null, question: question || null };
-  } catch {
-    return { ok: false };
+  } catch (err) {
+    return { ok: false, error: classifyCatchError(err) };
   } finally {
     clearTimeout(timer);
   }
@@ -596,7 +609,7 @@ const server = http.createServer(async (req, res) => {
       row.summary = result.summary;
       row.classifyError = null;
     } else {
-      row.classifyError = CLASSIFY_FAIL;
+      row.classifyError = result.error || CLASSIFY_FAIL;
     }
     save(store);
     json(res, 200, { ok: true, note: row, classified: !!result.ok });
@@ -660,7 +673,7 @@ const server = http.createServer(async (req, res) => {
       src.summary = result.summary;
       src.classifyError = null;
     } else {
-      src.classifyError = CLASSIFY_FAIL;
+      src.classifyError = result.error || CLASSIFY_FAIL;
     }
     save(store);
     json(res, 200, { ok: true, question: row, note: src, classified: !!result.ok });
