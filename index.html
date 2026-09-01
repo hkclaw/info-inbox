@@ -2455,6 +2455,9 @@ document.getElementById("importBoxFile").addEventListener("change", async () => 
     alert(body.error || "備份檔唔啱格式");
     return;
   }
+  const imported = Number(body.imported != null ? body.imported : body.added) || 0;
+  const skipped = Number(body.skipped) || 0;
+  alert("入咗 " + imported + " 條，略過 " + skipped + " 條重複。");
   await refreshBoxes();
   refreshDumpOnboard();
   loadNotes();

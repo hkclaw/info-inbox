@@ -1230,16 +1230,30 @@ const server = http.createServer(async (req, res) => {
     const idMap = {};
     const stamp = Date.now();
     const incoming = [];
+    let skipped = 0;
     const override = Object.prototype.hasOwnProperty.call(payload, "targetBox");
     const destBox = override ? normalizeBox(payload.targetBox) : null;
+    const seen = new Set();
+    store.notes.forEach((n) => {
+      seen.add(normalizeBox(n.box) + "\0" + String(n.text || "").trim());
+    });
     payload.notes.forEach((n, i) => {
+      const box = override ? destBox : normalizeBox(n.box);
+      const text = String(n.text || "").trim();
+      const key = box + "\0" + text;
+      if (seen.has(key)) {
+        skipped += 1;
+        return;
+      }
+      seen.add(key);
       const oldId = String(n.id || "");
       const nid = String(stamp) + "-b" + i + "-" + Math.random().toString(36).slice(2, 7);
       if (oldId) idMap[oldId] = nid;
       incoming.push({
         ...n,
         id: nid,
-        box: override ? destBox : normalizeBox(n.box),
+        box,
+        text: text || n.text,
       });
     });
     const incomingQs = [];
@@ -1263,20 +1277,26 @@ const server = http.createServer(async (req, res) => {
       const key = pairKey(a, b);
       if (!store.dismissedMerges.includes(key) && !extraDismiss.includes(key)) extraDismiss.push(key);
     });
-    store.notes = incoming.concat(store.notes);
-    store.questions = incomingQs.concat(store.questions || []);
-    store.dismissedMerges = (store.dismissedMerges || []).concat(extraDismiss);
-    save(store);
+    if (incoming.length || incomingQs.length || extraDismiss.length) {
+      store.notes = incoming.concat(store.notes);
+      store.questions = incomingQs.concat(store.questions || []);
+      store.dismissedMerges = (store.dismissedMerges || []).concat(extraDismiss);
+      save(store);
+    }
     const rawVec = payload.vectors;
-    if (rawVec && typeof rawVec === "object" && !Array.isArray(rawVec)) {
+    if (incoming.length && rawVec && typeof rawVec === "object" && !Array.isArray(rawVec)) {
       const map = loadVectors();
+      let wroteVec = false;
       for (const [oldId, vec] of Object.entries(rawVec)) {
         const nid = idMap[oldId];
-        if (nid && Array.isArray(vec) && vec.length) map[nid] = vec;
+        if (nid && Array.isArray(vec) && vec.length) {
+          map[nid] = vec;
+          wroteVec = true;
+        }
       }
-      saveVectors(map);
+      if (wroteVec) saveVectors(map);
     }
-    json(res, 200, { ok: true, added: incoming.length, questions: incomingQs.length });
+    json(res, 200, { ok: true, imported: incoming.length, skipped, added: incoming.length, questions: incomingQs.length });
     return;
   }
 
