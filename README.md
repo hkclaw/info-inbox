@@ -14,12 +14,12 @@ Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1
 
 ## V1 (today)
 
-- Dump a block of text
-- See notes (empty until you dump)
-- Search notes and questions
-- Merge tab: overlapping pairs, accept or dismiss (does not auto-rewrite the inbox)
-- Pending questions queue (empty until the model asks). Open items have a reply box; answered stay in the list with 「答：…」
-- POST /api/ingest stores the dump, then classifies with Ollama at http://127.0.0.1:11434 (llama3.2). Success writes tags and a one-line summary and clears classifyError. If Ollama is down, the note stays, tags stay empty, and the page shows 「連唔到 Ollama（127.0.0.1:11434）」. No invented tags.
+- Dump a block of text. Ollama llama3.2 at http://127.0.0.1:11434 writes tags + a one-line summary; if it is down the note stays, tags stay empty, and the page shows 「連唔到 Ollama（127.0.0.1:11434）」. No invented tags.
+- Notes list. Click a tag to filter; 「清篩選／顯示全部」 clears. 編輯 PATCHes text only. 刪除 is DELETE /api/notes/:id. Empty tags or classifyError show 「重新分類」.
+- Search finds notes and questions (text / summary / tags).
+- Pending: open items have a reply box and 「睇來源筆記」. Answering appends 「（澄清）答：…」 to the source note and reclassifies it. Answered cards stay with 「答：…」.
+- Merge tab: overlapping pairs, accept or dismiss. Does not auto-rewrite the inbox.
+- Tabs: Dump / Notes / Search / Pending / Merge. Localhost 127.0.0.1:3741 only.
 
 ## Classify
 
@@ -46,6 +46,6 @@ Notes with a classifyError or no tags show 「重新分類」. That POSTs /api/n
 
 ## Data
 
-JSON file under data/ (gitignored). Notes: id, text, createdAt, tags, summary, classifyError. Questions: id, text, status (open | answered), answer, createdAt.
+JSON file under data/ (gitignored). Notes: id, text, createdAt, tags, summary, classifyError, clarifications. Questions: id, text, status (open | answered), answer, noteId, createdAt. dismissedMerges stores dismissed pair keys.
 
 Merge later means overlapping notes, not rewriting the whole inbox.
