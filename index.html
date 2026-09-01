@@ -269,8 +269,8 @@
       opacity: 0.55;
     }
     #dump .paper-foot .ollama-setup {
+      flex: 1 1 100%;
       margin: 0;
-      max-width: 36rem;
       font-size: 13px;
       line-height: 1.5;
       color: color-mix(in srgb, var(--paper-ink) 72%, transparent);
@@ -525,11 +525,11 @@
               <label class="model-pick">模型
                 <select id="ollamaModel" disabled aria-label="Ollama model"></select>
               </label>
-              <p id="ollamaSetup" class="ollama-setup" hidden>
-                Ollama 未開（127.0.0.1:11434）。本機跑 <code>ollama serve</code>，再 <code>ollama pull <span id="ollamaSetupModel">llama3.2</span></code>。模型下拉會空到 Ollama 上線為止。
-              </p>
             </div>
             <button class="go" type="button" id="dumpGo">存入</button>
+            <p id="ollamaSetup" class="ollama-setup" hidden>
+              Ollama 未開（127.0.0.1:11434）。本機跑 <code>ollama serve</code>，再 <code>ollama pull <span id="ollamaSetupModel">llama3.2</span></code>。模型下拉會空到 Ollama 上線為止。
+            </p>
           </div>
         </div>
         <p id="dumpMsg" class="err" hidden></p>
