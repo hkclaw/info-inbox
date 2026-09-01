@@ -7,35 +7,37 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #211f1d;
-      --bg-deep: #1b1a18;
-      --surface: #282624;
-      --writing: #262422;
-      --text: #eee9e1;
-      --muted: #aaa39b;
-      --faint: #756f68;
-      --acc: #c98f63;
-      --acc-soft: rgba(201, 143, 99, 0.16);
-      --acc-ink: #1b1a18;
-      --danger: #c88476;
-      --warn: #c98f63;
-      --line: #34312e;
-      --line-soft: #2e2b28;
-      --sidebar-w: 224px;
-      --measure: 700px;
-      --ease: 160ms ease;
-      --font: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC",
-        "Microsoft JhengHei", sans-serif;
-      --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino,
-        "Noto Serif TC", "Songti TC", serif;
+      --canvas: #1A1714;
+      --surface: #221E1A;
+      --elevated: #2B2620;
+      --hairline: #3A332B;
+      --text-1: #ECE3D2;
+      --text-2: #B8AB94;
+      --text-3: #8A7E6A;
+      --acc: #D9A679;
+      --acc-hover: #E8C49A;
+      --acc-pressed: #C9956A;
+      --acc-ink: #1A1714;
+      --acc-soft: rgba(217, 166, 121, 0.14);
+      --danger: #C97A6A;
+      --paper: #F4ECD8;
+      --paper-ink: #2A241C;
+      --tag-bg: #332C24;
+      --tag-ink: #D9CFB8;
+      --sidebar-w: 240px;
+      --measure: 760px;
+      --header-h: 56px;
+      --ease: 150ms ease;
+      --font: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui,
+        -apple-system, "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body {
       margin: 0;
       font: 14px/1.6 var(--font);
-      background: var(--bg);
-      color: var(--text);
+      background: var(--canvas);
+      color: var(--text-1);
       -webkit-font-smoothing: antialiased;
     }
     button, input, textarea { font: inherit; color: inherit; }
@@ -44,71 +46,79 @@
     .app {
       display: flex;
       min-height: 100%;
+      background: var(--canvas);
     }
 
-    /* ——— Bear-like left text nav ——— */
+    /* ——— Left text nav ——— */
     .sidebar {
       width: var(--sidebar-w);
       flex-shrink: 0;
-      background: var(--bg-deep);
-      border-right: 1px solid var(--line-soft);
+      background: var(--surface);
+      border-right: 1px solid var(--hairline);
       display: flex;
       flex-direction: column;
-      padding: 22px 14px 16px;
+      padding: 0 0 16px;
       position: sticky;
       top: 0;
       height: 100vh;
     }
     .brand {
-      padding: 2px 10px 22px;
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
       font-size: 13px;
       font-weight: 600;
-      letter-spacing: 0.01em;
-      color: var(--text);
+      color: var(--text-1);
+      border-bottom: 1px solid var(--hairline);
     }
     .brand span {
-      color: var(--faint);
+      color: var(--text-3);
       font-weight: 500;
-      margin-left: 4px;
+      margin-left: 6px;
     }
     .sidebar nav {
       display: flex;
       flex-direction: column;
       gap: 2px;
       flex: 1;
+      padding: 16px 10px;
     }
     .sidebar nav button {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 8px;
       width: 100%;
       text-align: left;
-      padding: 9px 10px;
+      padding: 10px 14px;
       border: 0;
       border-radius: 8px;
       background: transparent;
-      color: var(--muted);
+      color: var(--text-2);
       font-size: 14px;
       cursor: pointer;
-      transition: background var(--ease), color var(--ease);
+      transition: background var(--ease), color var(--ease), opacity var(--ease);
     }
     .sidebar nav button:hover {
-      background: var(--surface);
-      color: var(--text);
+      background: var(--elevated);
+      color: var(--text-1);
     }
     .sidebar nav button.on {
-      background: var(--surface);
-      color: var(--text);
-      font-weight: 560;
+      background: transparent;
+      color: var(--text-1);
+      font-weight: 600;
     }
-    .sidebar nav .lab-en {
-      color: inherit;
+    .sidebar nav button.on::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 4px;
+      border-radius: 2px;
+      background: var(--acc);
     }
-    .sidebar nav .lab-zh {
-      color: var(--faint);
-      font-size: 12.5px;
-    }
-    .sidebar nav button.on .lab-zh { color: var(--muted); }
     #pendingBadge {
       display: none;
       margin-left: auto;
@@ -116,8 +126,8 @@
       padding: 0 6px;
       border-radius: 999px;
       background: transparent;
-      border: 1px solid var(--line);
-      color: var(--faint);
+      border: 1px solid var(--hairline);
+      color: var(--text-3);
       font-size: 11px;
       font-weight: 600;
       line-height: 17px;
@@ -125,20 +135,14 @@
     }
     #pendingBadge.on { display: inline-block; }
     .sidebar-foot {
-      padding: 14px 10px 4px;
-      border-top: 1px solid var(--line-soft);
-      margin-top: 12px;
+      padding: 12px 20px 4px;
+      border-top: 1px solid var(--hairline);
     }
     .sidebar-foot .hint {
-      margin: 10px 0 0;
+      margin: 0;
       font-size: 11.5px;
       line-height: 1.45;
-      color: var(--faint);
-    }
-    .sidebar-foot .backup {
-      width: 100%;
-      justify-content: flex-start;
-      padding-left: 0;
+      color: var(--text-3);
     }
 
     /* ——— Main column ——— */
@@ -147,164 +151,167 @@
       min-width: 0;
       display: flex;
       flex-direction: column;
-      background: var(--bg);
+      background: var(--canvas);
     }
     .page-head {
-      max-width: calc(var(--measure) + 96px);
+      height: var(--header-h);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      max-width: var(--measure);
       width: 100%;
       margin: 0 auto;
-      padding: 40px 48px 0;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--hairline);
     }
     .page-head h1 {
       margin: 0;
-      font-family: var(--serif);
-      font-size: 30px;
+      font-size: 16px;
       font-weight: 600;
-      letter-spacing: -0.02em;
-      line-height: 1.25;
-      color: var(--text);
+      letter-spacing: -0.01em;
+      color: var(--text-1);
     }
-    .page-head .lede {
-      margin: 8px 0 0;
-      color: var(--muted);
-      font-size: 13.5px;
-      max-width: 42em;
+    .page-head .lede { display: none; }
+    .backup {
+      padding: 6px 12px;
+      border: 1px solid var(--hairline);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-2);
+      font-size: 12.5px;
+      cursor: pointer;
+      transition: background var(--ease), color var(--ease), opacity var(--ease);
+    }
+    .backup:hover {
+      background: var(--elevated);
+      color: var(--text-1);
     }
     .canvas {
-      max-width: calc(var(--measure) + 96px);
+      max-width: var(--measure);
       width: 100%;
       margin: 0 auto;
-      padding: 28px 48px 96px;
+      padding: 24px 24px 96px;
       flex: 1;
     }
-    section { display: none; animation: rise 200ms ease; }
+    section { display: none; animation: fade 150ms ease; }
     section.on { display: block; }
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(3px); }
-      to { opacity: 1; transform: translateY(0); }
+    @keyframes fade {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
-    /* ——— Dump: Obsidian-like blank page ——— */
+    /* ——— Dump: one paper page ——— */
     #dump .paper {
-      background: var(--writing);
+      display: flex;
+      flex-direction: column;
+      background: var(--paper);
+      color: var(--paper-ink);
       border: 0;
-      border-radius: 0;
-      padding: 0;
-      min-height: 420px;
-    }
-    #dump .paper:focus-within {
-      box-shadow: none;
+      border-radius: 12px;
+      padding: 24px;
+      min-height: 60vh;
     }
     #dump textarea {
       width: 100%;
-      min-height: 420px;
-      padding: 8px 4px 24px;
+      flex: 1;
+      min-height: calc(60vh - 88px);
+      padding: 0;
       border: 0;
       border-radius: 0;
       background: transparent;
-      color: var(--text);
-      font-family: var(--serif);
-      font-size: 22px;
+      color: var(--paper-ink);
+      font-family: var(--font);
+      font-size: 16px;
       line-height: 1.7;
       resize: vertical;
       outline: none;
     }
-    #dump textarea::placeholder { color: var(--faint); }
-    #dump .row {
-      margin-top: 20px;
+    #dump textarea::placeholder { color: color-mix(in srgb, var(--paper-ink) 40%, transparent); }
+    #dump .paper-foot {
+      margin-top: 16px;
       display: flex;
+      justify-content: flex-end;
       align-items: center;
-      gap: 12px;
     }
     #dump .go { min-width: 88px; }
 
     /* ——— Forms & controls ——— */
     textarea, input[type=search] {
       width: 100%;
-      padding: 11px 0;
-      border: 0;
-      border-bottom: 1px solid var(--line);
-      border-radius: 0;
-      background: transparent;
-      color: var(--text);
-      outline: none;
-      transition: border-color var(--ease), box-shadow var(--ease);
-    }
-    textarea {
       padding: 12px 14px;
-      border: 1px solid var(--line-soft);
-      border-radius: 8px;
-      background: var(--writing);
+      border: 1px solid var(--hairline);
+      border-radius: 10px;
+      background: var(--elevated);
+      color: var(--text-1);
+      outline: none;
+      transition: background var(--ease), opacity var(--ease);
     }
     textarea:focus, input[type=search]:focus {
-      border-color: color-mix(in srgb, var(--acc) 55%, var(--line));
-      box-shadow: none;
-    }
-    input[type=search]:focus {
-      border-bottom-color: var(--acc);
+      border-color: color-mix(in srgb, var(--acc) 55%, var(--hairline));
     }
     textarea { min-height: 100px; resize: vertical; }
     .row { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     button.go {
       padding: 8px 16px;
       border: 0;
-      border-radius: 6px;
+      border-radius: 8px;
       background: var(--acc);
       color: var(--acc-ink);
       font-size: 13.5px;
       font-weight: 600;
       cursor: pointer;
-      transition: filter var(--ease), transform var(--ease);
+      transition: background var(--ease), opacity var(--ease);
     }
-    button.go:hover { filter: brightness(1.05); }
-    button.go:active { transform: translateY(1px); }
+    button.go:hover { background: var(--acc-hover); }
+    button.go:active { background: var(--acc-pressed); }
     button.go:disabled { opacity: 0.55; cursor: default; }
-    button.dim, button.del, .backup {
+    button.dim, button.del {
       padding: 6px 10px;
       border: 0;
       border-radius: 6px;
       background: transparent;
-      color: var(--muted);
+      color: var(--text-2);
       font-size: 13px;
       cursor: pointer;
-      transition: background var(--ease), color var(--ease);
+      transition: background var(--ease), color var(--ease), opacity var(--ease);
     }
-    button.dim:hover, .backup:hover {
-      background: var(--surface);
-      color: var(--text);
+    button.dim:hover {
+      background: var(--elevated);
+      color: var(--text-1);
     }
     button.del { color: var(--danger); }
     button.del:hover {
-      background: rgba(200, 132, 118, 0.1);
+      background: rgba(201, 122, 106, 0.12);
       color: var(--danger);
     }
     button.fold {
       padding: 2px 0;
-      font-size: 12.5px;
-      color: var(--faint);
+      font-size: 12px;
+      color: var(--text-3);
       background: none;
       border: 0;
       cursor: pointer;
+      transition: color var(--ease), opacity var(--ease);
     }
     button.fold:hover { color: var(--acc); }
 
     .empty {
-      color: var(--muted);
+      color: var(--text-2);
       padding: 48px 4px;
       font-size: 14px;
       line-height: 1.6;
     }
     .err {
-      color: var(--warn);
-      margin: 10px 0 0;
+      color: var(--acc);
+      margin: 12px 0 0;
       font-size: 13px;
     }
-    #dumpMsg.ok { color: var(--muted); }
+    #dumpMsg.ok { color: var(--text-2); }
     #noteFilter {
-      color: var(--muted);
-      margin: 0 0 8px;
-      padding-bottom: 14px;
-      border-bottom: 1px solid var(--line-soft);
+      color: var(--text-2);
+      margin: 0 0 12px;
       font-size: 13px;
       display: flex;
       align-items: center;
@@ -312,73 +319,70 @@
       flex-wrap: wrap;
     }
 
-    /* ——— Notes: editorial list (notes.png mood) ——— */
+    /* ——— Cards ——— */
     article {
-      background: transparent;
-      border: 0;
-      border-bottom: 1px solid var(--line-soft);
-      border-radius: 0;
-      padding: 22px 4px 20px;
-      margin: 0;
-      transition: background var(--ease);
+      background: var(--elevated);
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin: 0 0 12px;
+      transition: background var(--ease), opacity var(--ease);
     }
-    article:hover { background: color-mix(in srgb, var(--surface) 55%, transparent); }
+    article:hover { background: color-mix(in srgb, var(--elevated) 85%, var(--acc) 8%); }
     article.hl {
       background: var(--acc-soft);
-      box-shadow: inset 3px 0 0 var(--acc);
+      border-color: color-mix(in srgb, var(--acc) 40%, var(--hairline));
     }
     article .meta {
-      color: var(--faint);
+      color: var(--text-3);
       font-size: 12px;
       margin-bottom: 8px;
-      letter-spacing: 0.01em;
     }
     article pre {
       white-space: pre-wrap;
       margin: 10px 0 0;
       font: inherit;
       font-size: 14px;
-      color: var(--muted);
-      line-height: 1.65;
+      line-height: 1.6;
+      color: var(--text-2);
     }
     .sum {
-      font-family: var(--serif);
       font-weight: 600;
       margin: 0 0 10px;
       white-space: pre-wrap;
-      font-size: 18px;
-      letter-spacing: -0.01em;
-      line-height: 1.4;
-      color: var(--text);
+      font-size: 16px;
+      line-height: 1.45;
+      color: var(--text-1);
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
     }
     .tag {
       display: inline-block;
       margin: 0 6px 6px 0;
       padding: 2px 8px;
       border-radius: 999px;
-      border: 1px solid var(--line-soft);
-      background: transparent;
-      color: var(--faint);
+      border: 0;
+      background: var(--tag-bg);
+      color: var(--tag-ink);
       font-size: 12px;
       cursor: pointer;
-      transition: color var(--ease), border-color var(--ease), background var(--ease);
+      transition: background var(--ease), opacity var(--ease), color var(--ease);
     }
-    .tag:hover {
-      color: var(--text);
-      border-color: color-mix(in srgb, var(--acc) 40%, var(--line));
-    }
+    .tag:hover { opacity: 0.9; color: var(--text-1); }
     .tag.on {
-      color: var(--acc);
-      border-color: color-mix(in srgb, var(--acc) 45%, var(--line));
       background: var(--acc-soft);
+      color: var(--acc);
     }
     article .row { margin-top: 12px; }
     #searchForm { margin-bottom: 8px; }
     #searchForm .row { margin-top: 14px; }
     #searchForm input[type=search] {
-      font-size: 16px;
-      padding: 10px 2px 12px;
-      font-family: var(--serif);
+      font-size: 15px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: var(--surface);
     }
 
     @media (max-width: 720px) {
@@ -388,29 +392,21 @@
         height: auto;
         position: relative;
         border-right: 0;
-        border-bottom: 1px solid var(--line-soft);
-        padding: 14px 12px 10px;
+        border-bottom: 1px solid var(--hairline);
       }
       .sidebar nav {
         flex-direction: row;
         flex-wrap: wrap;
         gap: 4px;
+        padding: 10px;
       }
-      .sidebar nav button { width: auto; }
-      .sidebar-foot {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        border-top: 0;
-        margin-top: 8px;
-        padding-top: 4px;
-      }
-      .sidebar-foot .backup { width: auto; }
-      .sidebar-foot .hint { margin: 0; }
-      .page-head, .canvas { padding-left: 20px; padding-right: 20px; }
-      .page-head { padding-top: 24px; }
-      #dump textarea, #dump .paper { min-height: 260px; }
-      #dump textarea { font-size: 19px; }
+      .sidebar nav button { width: auto; padding: 8px 12px; }
+      .sidebar nav button.on::before { display: none; }
+      .sidebar nav button.on { background: var(--elevated); }
+      .sidebar-foot { display: none; }
+      .page-head, .canvas { padding-left: 16px; padding-right: 16px; }
+      #dump .paper { min-height: 50vh; padding: 18px; }
+      #dump textarea { min-height: calc(50vh - 80px); }
     }
   </style>
 </head>
@@ -419,14 +415,13 @@
   <aside class="sidebar">
     <div class="brand">info-inbox<span>本機</span></div>
     <nav>
-      <button type="button" data-tab="dump" class="on"><span class="lab-en">Dump</span> <span class="lab-zh">傾倒</span></button>
-      <button type="button" data-tab="notes"><span class="lab-en">Notes</span> <span class="lab-zh">筆記</span></button>
-      <button type="button" data-tab="search"><span class="lab-en">Search</span> <span class="lab-zh">搜尋</span></button>
-      <button type="button" data-tab="pending"><span class="lab-en">Pending</span> <span class="lab-zh">待答</span> <span id="pendingBadge"></span></button>
-      <button type="button" data-tab="merge"><span class="lab-en">Merge</span> <span class="lab-zh">合併</span></button>
+      <button type="button" data-tab="dump" class="on">傾倒</button>
+      <button type="button" data-tab="notes">筆記</button>
+      <button type="button" data-tab="search">搜尋</button>
+      <button type="button" data-tab="pending">待答 <span id="pendingBadge"></span></button>
+      <button type="button" data-tab="merge">合併</button>
     </nav>
     <div class="sidebar-foot">
-      <button type="button" class="backup" id="backup">下載備份</button>
       <p class="hint">本機 inbox。資料只存呢部機。分類用本機 Ollama llama3.2。</p>
     </div>
   </aside>
@@ -434,13 +429,16 @@
     <header class="page-head">
       <h1 id="pageTitle">傾倒</h1>
       <p class="lede" id="pageLede">貼一大段文字。分類稍後做。</p>
+      <button type="button" class="backup" id="backup">下載備份</button>
     </header>
     <main class="canvas">
       <section id="dump" class="on">
         <div class="paper">
           <textarea id="dumpText" placeholder="貼一大段文字"></textarea>
+          <div class="paper-foot">
+            <button class="go" type="button" id="dumpGo">存入</button>
+          </div>
         </div>
-        <div class="row"><button class="go" type="button" id="dumpGo">存入</button></div>
         <p id="dumpMsg" class="err" hidden></p>
         <p id="dumpDup" class="err" hidden>呢段同已有 note 一樣。 <button type="button" class="dim" id="dumpConfirm">仍然存入</button></p>
       </section>
