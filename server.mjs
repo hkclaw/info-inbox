@@ -14,7 +14,9 @@ const storeFile = path.join(dataDir, "inbox.json");
 const modelFile = path.join(dataDir, "ollama-model.json");
 const OLLAMA = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
-const OLLAMA_MS = Number(process.env.OLLAMA_MS || 20000);
+const OLLAMA_MS = Number(process.env.OLLAMA_MS || 90000);
+const CLASSIFY_CHARS = 4000;
+const CLASSIFY_NUM_PREDICT = 256;
 const TAGS_MS = Number(process.env.OLLAMA_TAGS_MS || 3000);
 const CLASSIFY_FAIL = "連唔到 Ollama（127.0.0.1:11434）";
 const CLASSIFY_TIMEOUT = "模型回逾時";
@@ -405,8 +407,9 @@ async function classify(text) {
             content:
               'Classify a personal note. JSON only: {"tags":["project-or-topic"],"summary":"one sentence","question":null}. Two to five short tags. If the dump is too vague to file, tags may be empty and question must be a short clarifying ask. Do not invent facts that are not in the text.',
           },
-          { role: "user", content: String(text).slice(0, 8000) },
+          { role: "user", content: String(text).slice(0, CLASSIFY_CHARS) },
         ],
+        options: { num_predict: CLASSIFY_NUM_PREDICT },
       }),
     });
     if (!r.ok) return { ok: false, error: classifyHttpError(r.status) };
