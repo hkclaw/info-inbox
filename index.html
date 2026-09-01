@@ -494,6 +494,26 @@
       background: var(--surface);
     }
 
+
+    #graphTags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+    #graphTags button {
+      background: var(--surface); color: var(--acc); border: 1px solid var(--hairline);
+      border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer;
+    }
+    #graphTags button.active { background: var(--acc); color: var(--acc-ink, #1a1714); }
+    #graphCanvas {
+      display: block; width: 100%; height: min(70vh, 560px);
+      background: var(--bg-deep, #1b1a18); border: 1px solid var(--hairline);
+      border-radius: 12px; cursor: grab; touch-action: none;
+    }
+    #graphCanvas:active { cursor: grabbing; }
+    #graphTip {
+      position: fixed; pointer-events: none; display: none; z-index: 20;
+      max-width: 260px; padding: 6px 8px; border-radius: 8px; font-size: 12px;
+      background: var(--elevated, #2b2620); color: var(--text-1, #ece3d2);
+      border: 1px solid var(--acc);
+    }
+    #graphEmpty { color: var(--text-3); padding: 36px 8px; }
     @media (max-width: 720px) {
       .app { flex-direction: column; }
       .sidebar {
@@ -529,6 +549,7 @@
       <button type="button" data-tab="search">搜尋</button>
       <button type="button" data-tab="pending">待答 <span id="pendingBadge"></span></button>
       <button type="button" data-tab="merge">合併</button>
+      <button type="button" data-tab="graph">圖譜</button>
     </nav>
     <div class="sidebar-foot">
       <p class="hint">本機 inbox。資料只存呢部機。分類用本機 Ollama。</p>
@@ -589,6 +610,12 @@
       <section id="merge">
         <div id="mergeList" class="empty">未有合併建議。</div>
       </section>
+      <section id="graph">
+        <div id="graphTags"></div>
+        <p id="graphEmpty" class="empty" hidden>未有筆記</p>
+        <canvas id="graphCanvas" width="800" height="520"></canvas>
+        <div id="graphTip"></div>
+      </section>
     </main>
   </div>
 </div>
@@ -601,6 +628,7 @@ const pageCopy = {
   search: { title: "搜尋", lede: "搵筆記同問題。" },
   pending: { title: "待答", lede: "含糊 dump 留下嘅待答問題。" },
   merge: { title: "合併", lede: "重疊筆記建議。接受或唔合。" },
+  graph: { title: "圖譜", lede: "筆記關係。撳節點去筆記。" },
 };
 
 function setDumpOnboardOllama(ready, modelName) {
@@ -713,6 +741,7 @@ tabs.forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.tab === "notes") loadNotes();
   if (b.dataset.tab === "pending") loadPending();
   if (b.dataset.tab === "merge") loadMerge();
+  if (b.dataset.tab === "graph") loadGraph();
 }));
 
 let tagFilter = "";
@@ -999,6 +1028,213 @@ async function loadNotes() {
     if (hit) hit.scrollIntoView({ block: "center" });
   }
 }
+
+
+const graphState = { nodes: [], edges: [], tags: [], activeTag: null, scale: 1, tx: 0, ty: 0, drag: null };
+
+function graphLabel(n) {
+  return (n.summary || n.filename || (n.text || "")).trim().slice(0, 18) || n.id;
+}
+
+async function loadGraph() {
+  const c = document.getElementById("graphCanvas");
+  const em = document.getElementById("graphEmpty");
+  if (!c) return;
+  const [notesRes, mergeRes, qRes] = await Promise.all([
+    fetch("/api/notes").then((r) => r.json()).catch(() => ({ notes: [] })),
+    fetch("/api/merge-suggestions").then((r) => r.json()).catch(() => ({ suggestions: [] })),
+    fetch("/api/questions").then((r) => r.json()).catch(() => ({ questions: [] })),
+  ]);
+  const notes = Array.isArray(notesRes.notes) ? notesRes.notes : [];
+  if (!notes.length) {
+    em.hidden = false;
+    c.style.display = "none";
+    document.getElementById("graphTags").replaceChildren();
+    return;
+  }
+  em.hidden = true;
+  c.style.display = "block";
+  const w = Math.max(320, c.parentElement.clientWidth || 800);
+  c.width = w;
+  c.height = Math.min(560, Math.max(360, Math.round(w * 0.62)));
+  const cx = c.width / 2, cy = c.height / 2;
+  const nodes = notes.map((n, i) => {
+    const a = (i * 137.508 * Math.PI) / 180;
+    const rad = 90 + Math.sqrt(i + 1) * 28;
+    return { id: n.id, x: Math.cos(a) * rad + cx, y: Math.sin(a) * rad + cy, note: n, pending: false };
+  });
+  const byId = {};
+  nodes.forEach((n) => { byId[n.id] = n; });
+  const edges = [];
+  const tagMap = {};
+  notes.forEach((n) => {
+    (n.tags || []).forEach((tag) => {
+      (tagMap[tag] = tagMap[tag] || []).push(n.id);
+    });
+  });
+  Object.keys(tagMap).forEach((tag) => {
+    const ids = tagMap[tag];
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) edges.push({ a: ids[i], b: ids[j], kind: "tag" });
+    }
+  });
+  (mergeRes.suggestions || []).forEach((m) => {
+    if (m.a && m.b) edges.push({ a: m.a, b: m.b, kind: "merge" });
+  });
+  (qRes.questions || []).forEach((q, qi) => {
+    if ((q.status || "open") !== "open" || !q.noteId || !byId[q.noteId]) return;
+    const src = byId[q.noteId];
+    const pid = "__q__" + (q.id || qi);
+    nodes.push({
+      id: pid,
+      x: src.x + 20,
+      y: src.y - 20,
+      note: { id: q.noteId, summary: (q.text || "待答").slice(0, 18), tags: [] },
+      pending: true,
+    });
+    edges.push({ a: pid, b: q.noteId, kind: "pending" });
+  });
+  graphState.nodes = nodes;
+  graphState.edges = edges;
+  graphState.tags = Object.keys(tagMap).sort();
+  graphState.scale = 1;
+  graphState.tx = 0;
+  graphState.ty = 0;
+  renderGraphTags();
+  graphDraw();
+}
+
+function renderGraphTags() {
+  const bar = document.getElementById("graphTags");
+  bar.replaceChildren();
+  function chip(label, val) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    if (graphState.activeTag === val) b.classList.add("active");
+    b.addEventListener("click", () => {
+      graphState.activeTag = val;
+      renderGraphTags();
+      graphDraw();
+    });
+    bar.appendChild(b);
+  }
+  chip("全部", null);
+  graphState.tags.forEach((tag) => chip(tag, tag));
+}
+
+function graphDraw() {
+  const c = document.getElementById("graphCanvas");
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  const byId = {};
+  graphState.nodes.forEach((n) => { byId[n.id] = n; });
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.save();
+  ctx.translate(graphState.tx, graphState.ty);
+  ctx.scale(graphState.scale, graphState.scale);
+  graphState.edges.forEach((e) => {
+    const na = byId[e.a], nb = byId[e.b];
+    if (!na || !nb) return;
+    ctx.beginPath();
+    ctx.moveTo(na.x, na.y);
+    ctx.lineTo(nb.x, nb.y);
+    if (e.kind === "pending") {
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = "rgba(155,155,155,0.85)";
+      ctx.lineWidth = 1.2;
+    } else if (e.kind === "merge") {
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "#c98f63";
+      ctx.lineWidth = 1.6;
+    } else {
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(201,143,99,0.45)";
+      ctx.lineWidth = 1;
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+  graphState.nodes.forEach((n) => {
+    const dim = !!(graphState.activeTag && !n.pending && !(n.note.tags || []).includes(graphState.activeTag));
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.pending ? 4.5 : 6.5, 0, Math.PI * 2);
+    if (n.note.classifyError) ctx.fillStyle = "rgba(201,143,99,0.35)";
+    else if (n.pending) ctx.fillStyle = dim ? "rgba(155,155,155,0.4)" : "#9b9b9b";
+    else ctx.fillStyle = dim ? "rgba(120,120,120,0.35)" : "#c98f63";
+    ctx.fill();
+    ctx.fillStyle = dim ? "#666" : "#e8eef0";
+    ctx.font = "11px system-ui,sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(graphLabel(n.note), n.x, n.y + 16);
+  });
+  ctx.restore();
+}
+
+(function bindGraphCanvas() {
+  const c = document.getElementById("graphCanvas");
+  if (!c) return;
+  let moved = 0;
+  c.addEventListener("mousedown", (e) => {
+    const r = c.getBoundingClientRect();
+    graphState.drag = { x: e.clientX - r.left, y: e.clientY - r.top, sx: graphState.tx, sy: graphState.ty };
+    moved = 0;
+  });
+  window.addEventListener("mouseup", () => { graphState.drag = null; });
+  c.addEventListener("mousemove", (e) => {
+    const r = c.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const tip = document.getElementById("graphTip");
+    if (graphState.drag) {
+      moved += Math.abs(mx - graphState.drag.x) + Math.abs(my - graphState.drag.y);
+      graphState.tx = graphState.drag.sx + (mx - graphState.drag.x);
+      graphState.ty = graphState.drag.sy + (my - graphState.drag.y);
+      tip.style.display = "none";
+      graphDraw();
+      return;
+    }
+    const wx = (mx - graphState.tx) / graphState.scale;
+    const wy = (my - graphState.ty) / graphState.scale;
+    let hit = null;
+    for (const n of graphState.nodes) {
+      const dx = n.x - wx, dy = n.y - wy;
+      if (dx * dx + dy * dy < 100) { hit = n; break; }
+    }
+    if (hit) {
+      tip.textContent = hit.note.summary || hit.note.filename || (hit.note.text || "").slice(0, 80) || graphLabel(hit.note);
+      tip.style.left = e.clientX + 12 + "px";
+      tip.style.top = e.clientY + 12 + "px";
+      tip.style.display = "block";
+    } else tip.style.display = "none";
+  });
+  c.addEventListener("click", (e) => {
+    if (moved > 6) return;
+    const r = c.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const wx = (mx - graphState.tx) / graphState.scale;
+    const wy = (my - graphState.ty) / graphState.scale;
+    for (const n of graphState.nodes) {
+      const dx = n.x - wx, dy = n.y - wy;
+      if (dx * dx + dy * dy < 100) {
+        showSourceNote(n.note.id);
+        return;
+      }
+    }
+  });
+  c.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = c.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const wx = (mx - graphState.tx) / graphState.scale;
+    const wy = (my - graphState.ty) / graphState.scale;
+    const k = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const ns = Math.max(0.25, Math.min(4, graphState.scale * k));
+    graphState.tx = mx - wx * ns;
+    graphState.ty = my - wy * ns;
+    graphState.scale = ns;
+    graphDraw();
+  }, { passive: false });
+})();
 
 async function showSourceNote(id) {
   highlightId = id;

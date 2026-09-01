@@ -22,7 +22,8 @@ Empty Dump shows three short steps (paste/drop → local Ollama → Pending when
 - Search finds notes and questions (text / summary / tags).
 - Pending: open items have a reply box and 「睇來源筆記」. Answering appends 「（澄清）答：…」 to the source note and reclassifies it. Answered cards stay with 「答：…」.
 - Merge tab: overlapping pairs, accept or dismiss. Does not auto-rewrite the inbox.
-- Tabs: Dump / Notes / Search / Pending / Merge. Localhost 127.0.0.1:3741 only.
+- Tabs: Dump / Notes / Search / Pending / Merge / 圖譜. Localhost 127.0.0.1:3741 only.
+- Graph tab: notes as nodes (summary or filename). Edges for shared tags, merge pairs, and open pending questions (dashed) to the source note. Click a node to jump to Notes. Pan/zoom; tag chips filter. classifyError nodes are dim. Empty inbox shows 「未有筆記」. Local canvas, no cloud.
 
 ## Classify
 
