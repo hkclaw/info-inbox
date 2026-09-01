@@ -23,16 +23,16 @@ Empty Dump shows three short steps (paste/drop → local Ollama → Pending when
 - Pending: open items have a reply box and 「睇來源筆記」. Answering appends 「（澄清）答：…」 to the source note and reclassifies it. Answered cards stay with 「答：…」.
 - Merge tab: overlapping pairs, accept or dismiss. Does not auto-rewrite the inbox.
 - Tabs: Dump / Notes / Search / Pending / Merge / 圖譜. Localhost 127.0.0.1:3741 only.
-- Graph tab: notes as nodes (summary or filename). Edges for shared tags, merge pairs, and open pending questions (dashed) to the source note. Click a node to jump to Notes. Pan/zoom; tag chips filter. classifyError nodes are dim. Empty inbox shows 「未有筆記」. Local canvas, no cloud.
+- Graph tab: notes as hollow copper nodes; tags are smaller hollow hubs. Notes link to tags (not note↔note from one shared tag). Merge and pending stay note↔note (pending dashed). Labels cap at 16 characters. Click a note to jump to Notes. Pan/zoom; tag chips filter. Empty inbox shows 「未有筆記」. Local canvas, no cloud.
 
 ## Classify
 
-Needs a local Ollama. Default model llama3.2 at http://127.0.0.1:11434. On Dump you can pick a local Ollama model from the pulled list; default is llama3.2 when it is available.
+Needs a local Ollama. Default model llama3.2 at http://127.0.0.1:11434. On Dump you can pick a local Ollama model from the pulled list; if llama3.2 is pulled, reload selects it even if a vision model was saved. Classify sends the first 4k characters, num_predict 256, timeout 90s.
 
     ollama serve
     ollama pull llama3.2
 
-If Ollama is down, Dump shows setup steps (`ollama serve` / `ollama pull …`) beside the empty model list. Dump still saves if the model is offline. The page then shows 「連唔到 Ollama（127.0.0.1:11434）」 and does not invent tags. Vague dumps may enqueue an open question. Answer on the Pending tab (textarea + 送出) or POST /api/questions/:id/answer with { "answer": "..." }. That stores the answer, sets status to answered, and appends 「（澄清）答：…」 to the source note. Pending cards with a noteId have 「睇來源筆記」 to jump to that note. Already answered, missing noteId, and missing source note return a clear error. After a successful answer the source note is reclassified with the same local Ollama (llama3.2). If Ollama is down the clarification still stays on the note, tags are not invented, and 「連唔到 Ollama（127.0.0.1:11434）」 is shown.
+If Ollama is down, Dump shows setup steps (`ollama serve` / `ollama pull …`) beside the empty model list. Dump still saves if the model is offline. Unreachable 11434 shows 「連唔到 Ollama（127.0.0.1:11434）」. A reachable model that returns HTTP 500 shows 「模型回錯誤（HTTP 500）」; a timeout shows 「模型回逾時」. No invented tags. Vague dumps may enqueue an open question. Answer on the Pending tab (textarea + 送出) or POST /api/questions/:id/answer with { "answer": "..." }. That stores the answer, sets status to answered, and appends 「（澄清）答：…」 to the source note. Pending cards with a noteId have 「睇來源筆記」 to jump to that note. Already answered, missing noteId, and missing source note return a clear error. After a successful answer the source note is reclassified with the same local Ollama (llama3.2). If Ollama is down the clarification still stays on the note, tags are not invented, and 「連唔到 Ollama（127.0.0.1:11434）」 is shown.
 
 ## Merge
 

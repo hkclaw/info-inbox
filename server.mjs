@@ -57,13 +57,18 @@ function isDefaultModelName(name) {
   return n === "llama3.2" || n.startsWith("llama3.2:");
 }
 
+function isVisionModel(name) {
+  return /vl|vision/i.test(String(name || ""));
+}
+
 function pickDefaultModel(models) {
   const list = Array.isArray(models) ? models : [];
-  const pref = loadModelPreference();
-  if (pref && list.includes(pref)) return pref;
   const llama = list.find(isDefaultModelName);
   if (llama) return llama;
-  return list[0] || null;
+  const pref = loadModelPreference();
+  if (pref && list.includes(pref) && !isVisionModel(pref)) return pref;
+  const text = list.find((m) => !isVisionModel(m));
+  return text || list[0] || null;
 }
 
 async function listOllamaModels() {
@@ -87,7 +92,9 @@ async function listOllamaModels() {
 }
 
 function getActiveModel() {
-  return loadModelPreference() || DEFAULT_MODEL;
+  const pref = loadModelPreference();
+  if (pref && !isVisionModel(pref)) return pref;
+  return DEFAULT_MODEL;
 }
 
 function emptyStore() {
