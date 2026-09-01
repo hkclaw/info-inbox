@@ -1,4 +1,4 @@
-# info-inbox
+# 入盒
 
 Local inbox for scattered notes. Dump text, classify later with a local Ollama model, answer pending questions, search. Data stays on this machine. Not a full PKM.
 
