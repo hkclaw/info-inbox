@@ -1277,7 +1277,14 @@ const server = http.createServer(async (req, res) => {
       json(res, 409, { error: "呢條已答過" });
       return;
     }
-    if (Array.isArray(row.suggestions) && row.suggestions.length >= 2) {
+    let payload = {};
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      payload = {};
+    }
+    const force = !!payload.force;
+    if (!force && Array.isArray(row.suggestions) && row.suggestions.length >= 2) {
       json(res, 200, { ok: true, question: row });
       return;
     }

@@ -1094,10 +1094,31 @@ function qCard(item, canAnswer) {
     const err = document.createElement("p");
     err.className = "err";
     err.hidden = true;
+    const againBtn = document.createElement("button");
+    againBtn.type = "button";
+    againBtn.className = "dim";
+    againBtn.textContent = "再建議";
     selfBtn.addEventListener("click", () => {
       const open = ta.hidden;
       ta.hidden = !open;
       btn.hidden = !open;
+    });
+    againBtn.addEventListener("click", async () => {
+      err.hidden = true;
+      againBtn.disabled = true;
+      const r = await fetch("/api/questions/" + encodeURIComponent(item.id) + "/suggest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ force: true }),
+      });
+      const data = await r.json().catch(() => ({}));
+      againBtn.disabled = false;
+      if (!r.ok) {
+        err.hidden = false;
+        err.textContent = data.error || "建議唔到";
+        return;
+      }
+      await loadPending();
     });
     async function sendAnswer(answer) {
       err.hidden = true;
@@ -1117,6 +1138,7 @@ function qCard(item, canAnswer) {
     }
     btn.addEventListener("click", () => sendAnswer(ta.value));
     row.appendChild(selfBtn);
+    row.appendChild(againBtn);
     row.appendChild(btn);
     art.appendChild(ta);
     art.appendChild(row);
@@ -1507,7 +1529,7 @@ async function loadPending() {
   }
   el.className = "";
   el.replaceChildren(...qs.map((item) => qCard(item, true)));
-  const need = qs.filter((item) => (item.status || "open") === "open" && !(item.suggestions || []).length && !item.suggestError);
+  const need = qs.filter((item) => (item.status || "open") === "open" && !(item.suggestions || []).length);
   if (!need.length) return;
   await Promise.all(need.map((item) => fetch("/api/questions/" + encodeURIComponent(item.id) + "/suggest", { method: "POST" })));
   const r2 = await fetch("/api/questions");
