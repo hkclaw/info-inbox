@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFParse } from "pdf-parse";
 import * as XLSX from "xlsx";
+import mammoth from "mammoth";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const BIND = process.env.BIND || "127.0.0.1";
@@ -247,6 +248,20 @@ async function extractSpreadsheet(data) {
   return parts.join("\n").trim();
 }
 
+
+async function extractDocx(data, filename) {
+  try {
+    const result = await mammoth.extractRawText({ buffer: data });
+    const text = result && typeof result.value === "string" ? result.value.trim() : "";
+    if (!text) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    return { text, supported: true };
+  } catch {
+    return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+  }
+}
+
 async function extractFileText(filename, data) {
   const ext = extOf(filename);
   if (TEXT_EXTS.has(ext)) {
@@ -264,6 +279,9 @@ async function extractFileText(filename, data) {
         /* ignore */
       }
     }
+  }
+  if (ext === ".docx") {
+    return extractDocx(data, filename);
   }
   if (ext === ".xlsx" || ext === ".xls") {
     try {
