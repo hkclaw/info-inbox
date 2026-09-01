@@ -739,7 +739,15 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const dismissedMerges = Array.isArray(payload.dismissedMerges) ? payload.dismissedMerges : [];
+    let nextVectors = {};
+    const rawVec = payload.vectors;
+    if (rawVec && typeof rawVec === "object" && !Array.isArray(rawVec)) {
+      for (const [id, vec] of Object.entries(rawVec)) {
+        if (Array.isArray(vec) && vec.length) nextVectors[id] = vec;
+      }
+    }
     save({ notes: payload.notes, questions: payload.questions, dismissedMerges });
+    saveVectors(nextVectors);
     json(res, 200, { ok: true });
     return;
   }
@@ -750,6 +758,7 @@ const server = http.createServer(async (req, res) => {
       notes: store.notes,
       questions: store.questions,
       dismissedMerges: store.dismissedMerges,
+      vectors: loadVectors(),
       exportedAt: new Date().toISOString(),
     }, null, 2);
     res.writeHead(200, {
@@ -898,6 +907,7 @@ const server = http.createServer(async (req, res) => {
       src.classifyError = result.error || CLASSIFY_FAIL;
     }
     save(store);
+    await embedNote(src.id, src.text || "");
     json(res, 200, { ok: true, question: row, note: src, classified: !!result.ok });
     return;
   }
@@ -966,6 +976,8 @@ const server = http.createServer(async (req, res) => {
     store.notes = store.notes.filter((n) => n.id !== dropKey);
     store.dismissedMerges = store.dismissedMerges.filter((k) => !k.split("|").includes(dropKey) && !k.split("|").includes(keep.id));
     save(store);
+    dropVector(dropKey);
+    await embedNote(keep.id, keep.text || "");
     json(res, 200, { ok: true, note: keep, deleted: dropKey });
     return;
   }

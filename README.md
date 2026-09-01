@@ -50,7 +50,7 @@ Notes with a classifyError or no tags show 「重新分類」. That POSTs /api/n
 
 ## Backup
 
-Click 「下載備份」 on the page (GET /api/export). One JSON file with notes, pending questions, and merge dismissals. 「還原備份」 POSTs that JSON to /api/import and replaces the whole local store after confirm. Bad files return 「備份檔唔啱格式」 and write nothing. Stays on this machine.
+Click 「下載備份」 on the page (GET /api/export). One JSON file with notes, pending questions, merge dismissals, and the vectors map. 「還原備份」 POSTs that JSON to /api/import and replaces the whole local store and vectors after confirm. Old backups with no vectors (or an empty map) clear embeddings so Search stays keyword-only and does not crash. Bad files return 「備份檔唔啱格式」 and write nothing. Stays on this machine.
 
 ## Data
 
