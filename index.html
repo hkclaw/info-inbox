@@ -342,6 +342,13 @@
       font-weight: 600;
       color: var(--paper-ink);
     }
+
+    #dump .staged .st-status { display: block; font-size: 12px; color: color-mix(in srgb, var(--paper-ink) 62%, transparent); margin-top: 2px; }
+    #dump .staged .st-status.failed { color: var(--danger, #c97a6a); }
+    #ollamaLive { margin: 0; font-size: 12.5px; color: color-mix(in srgb, var(--paper-ink) 72%, transparent); flex: 1 1 100%; }
+    #ollamaLive.down { color: var(--warn, #c98f63); }
+    .busy { opacity: 0.65; cursor: wait; }
+    .card-status { font-size: 13px; color: var(--text-3); margin: 4px 0 0; }
     #dump .staged .staged-meta span {
       opacity: 0.85;
     }
@@ -587,6 +594,7 @@
               </label>
             </div>
             <button class="go" type="button" id="dumpGo">存入</button>
+            <p id="ollamaLive" class="ollama-live" hidden></p>
             <p id="ollamaSetup" class="ollama-setup" hidden>
               Ollama 未開（127.0.0.1:11434）。本機跑 <code>ollama serve</code>，再 <code>ollama pull <span id="ollamaSetupModel">llama3.2</span></code>。模型下拉會空到 Ollama 上線為止。
             </p>
@@ -648,6 +656,19 @@ function setDumpOnboardOllama(ready, modelName) {
   }
 }
 
+function setOllamaLive(ok, modelName) {
+  const live = document.getElementById("ollamaLive");
+  if (!live) return;
+  live.hidden = false;
+  if (ok) {
+    live.classList.remove("down");
+    live.textContent = "就緒 · " + (String(modelName || "").trim() || "llama3.2");
+  } else {
+    live.classList.add("down");
+    live.textContent = "連唔到 Ollama（127.0.0.1:11434）";
+  }
+}
+
 function setOllamaSetupHint(show, defaultModel) {
   const hint = document.getElementById("ollamaSetup");
   const modelEl = document.getElementById("ollamaSetupModel");
@@ -692,6 +713,7 @@ async function loadOllamaModels() {
     sel.innerHTML = "";
     sel.disabled = true;
     setOllamaSetupHint(true, defaultModel);
+    setOllamaLive(false);
     setDumpOnboardOllama(false);
     return;
   }
@@ -699,6 +721,7 @@ async function loadOllamaModels() {
   if (!models.length) {
     sel.innerHTML = "";
     sel.disabled = true;
+    setOllamaLive(false);
     setDumpOnboardOllama(true, defaultModel);
     return;
   }
@@ -711,6 +734,7 @@ async function loadOllamaModels() {
   const selected = data.selected && models.includes(data.selected) ? data.selected : models[0];
   sel.value = selected;
   sel.disabled = false;
+  setOllamaLive(true, selected);
   setDumpOnboardOllama(true, selected);
 }
 
@@ -815,6 +839,11 @@ function noteCard(n, withDelete) {
     errLine.style.margin = "4px 0 0";
     errLine.textContent = n.classifyError;
     art.appendChild(errLine);
+  } else if (!(n.tags || []).length && n.summary !== "未支援抽文字" && !n.summary) {
+    const wait = document.createElement("div");
+    wait.className = "card-status";
+    wait.textContent = "分類中…";
+    art.appendChild(wait);
   }
   if (n.summary) {
     const sum = document.createElement("div");
@@ -1347,6 +1376,12 @@ let stagedFiles = []; // { id, file, name, bytes, fileModifiedAt }
 let pendingPasteConfirm = false;
 let pendingFileDupFrom = -1;
 
+function stagedStatusText(row) {
+  if (row.status === "extracting") return "抽出緊…";
+  if (row.status === "failed") return "失敗：" + (row.failReason || "未知原因");
+  return "就緒";
+}
+
 function renderStaged() {
   const el = document.getElementById("dumpStaged");
   if (!stagedFiles.length) {
@@ -1367,6 +1402,10 @@ function renderStaged() {
     rest.textContent = " · " + bits.join(" · ");
     meta.appendChild(name);
     meta.appendChild(rest);
+    const st = document.createElement("span");
+    st.className = "st-status" + (row.status === "failed" ? " failed" : "");
+    st.textContent = stagedStatusText(row);
+    meta.appendChild(st);
     const rm = document.createElement("button");
     rm.type = "button";
     rm.className = "dim";
@@ -1391,6 +1430,8 @@ function stageFiles(fileList) {
       name: file.name || "file",
       bytes: file.size || 0,
       fileModifiedAt: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+      status: "ready",
+      failReason: "",
     });
   }
   renderStaged();
@@ -1398,17 +1439,10 @@ function stageFiles(fileList) {
 
 function showIngestResult(msg, data, fileCount) {
   msg.hidden = false;
-  const note = data.note || (data.results && data.results[0] && data.results[0].note);
   const question = data.question || (data.results || []).some((x) => x.question);
-  if (note && note.classifyError) msg.textContent = note.classifyError;
-  else if (question) {
-    msg.classList.add("ok");
-    msg.textContent = "已存，有待答問題";
-  } else {
-    msg.classList.add("ok");
-    const n = fileCount != null ? fileCount : (data.results ? data.results.length : 1);
-    msg.textContent = n > 1 ? "已存 " + n + " 個檔" : "已分類";
-  }
+  msg.classList.add("ok");
+  const n = fileCount != null ? fileCount : (data.results ? data.results.length : 1);
+  msg.textContent = question ? ("已入 " + n + " 條，有待答問題") : ("已入 " + n + " 條");
 }
 
 async function ingestPasteOnly(confirmDup) {
@@ -1450,6 +1484,9 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
   for (let i = Math.max(0, fromIndex | 0); i < stagedFiles.length; i++) {
     const row = stagedFiles[i];
     const file = row.file;
+    row.status = "extracting";
+    row.failReason = "";
+    renderStaged();
     const fd = new FormData();
     fd.append("file", file, row.name);
     if (row.fileModifiedAt) fd.append("fileModifiedAt", row.fileModifiedAt);
@@ -1457,17 +1494,24 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
     const r = await fetch("/api/ingest-files", { method: "POST", body: fd });
     const data = await r.json().catch(() => ({}));
     if (r.status === 409) {
+      row.status = "ready";
+      renderStaged();
       pendingFileDupFrom = i;
       pendingPasteConfirm = false;
       dupEl.hidden = false;
       return { ok: false, dup: true, results };
     }
     if (!r.ok) {
+      row.status = "failed";
+      row.failReason = data.error || "存唔到";
+      renderStaged();
       pendingFileDupFrom = -1;
       msg.hidden = false;
       msg.textContent = (data.error || "存唔到") + (row.name ? "（" + row.name + "）" : "");
       return { ok: false, results };
     }
+    row.status = "ready";
+    renderStaged();
     confirmNext = false;
     pendingFileDupFrom = -1;
     results.push(data);
@@ -1478,9 +1522,14 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
 async function dumpSave(confirmDup) {
   const msg = document.getElementById("dumpMsg");
   const dupEl = document.getElementById("dumpDup");
+  const go = document.getElementById("dumpGo");
   msg.hidden = true;
   msg.classList.remove("ok");
   dupEl.hidden = true;
+  go.disabled = true;
+  go.textContent = "分類中…";
+  go.classList.add("busy");
+  try {
 
   const hasStaged = stagedFiles.length > 0;
   const text = document.getElementById("dumpText").value.trim();
@@ -1529,6 +1578,12 @@ async function dumpSave(confirmDup) {
   loadNotes();
   refreshPendingBadge();
   refreshDumpOnboard();
+  } finally {
+    const goBtn = document.getElementById("dumpGo");
+    goBtn.disabled = false;
+    goBtn.textContent = "存入";
+    goBtn.classList.remove("busy");
+  }
 }
 
 document.getElementById("dumpGo").addEventListener("click", () => {
