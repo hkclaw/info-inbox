@@ -12,9 +12,13 @@
     header { padding: 16px 16px 0; max-width: 720px; margin: 0 auto; }
     h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
     .sub { color: var(--muted); margin: 0 0 12px; }
-    nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-    nav button { padding: 8px 12px; border: 0; border-radius: 8px; font: inherit; cursor: pointer; background: #2c2c2e; color: var(--text); }
+    nav { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 -4px 16px; padding: 4px; background: var(--card); border-radius: 12px; }
+    nav button { padding: 8px 12px; border: 0; border-radius: 8px; font: inherit; cursor: pointer; background: transparent; color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
     nav button.on { background: var(--acc); color: #fff; font-weight: 600; }
+    #pendingBadge { display: none; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--acc); color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; }
+    #pendingBadge.on { display: inline-block; }
+    nav button.on #pendingBadge { background: #fff; color: var(--acc); }
+    .fold { padding: 4px 10px; font-size: 13px; }
     main { max-width: 720px; margin: 0 auto; padding: 0 16px 80px; }
     section { display: none; }
     section.on { display: block; }
@@ -44,7 +48,7 @@
     <button type="button" data-tab="dump" class="on">Dump</button>
     <button type="button" data-tab="notes">Notes</button>
     <button type="button" data-tab="search">Search</button>
-    <button type="button" data-tab="pending">Pending</button>
+    <button type="button" data-tab="pending">Pending <span id="pendingBadge"></span></button>
     <button type="button" data-tab="merge">Merge</button>
   </nav>
 </header>
@@ -56,17 +60,17 @@
   </section>
   <section id="notes">
     <p id="noteFilter" hidden><span id="noteFilterLabel"></span> <button type="button" class="dim" id="noteFilterClear">清篩選／顯示全部</button></p>
-    <div id="notesList" class="empty">未有筆記。</div>
+    <div id="notesList" class="empty">未有筆記。去 Dump 貼一段文字。</div>
   </section>
   <section id="search">
     <form id="searchForm">
       <input type="search" id="q" placeholder="關鍵字" autocomplete="off">
       <div class="row"><button class="go" type="submit">搜</button></div>
     </form>
-    <div id="searchList" class="empty">未搜。</div>
+    <div id="searchList" class="empty">未搜。輸入關鍵字搵筆記同問題。</div>
   </section>
   <section id="pending">
-    <div id="pendingList" class="empty">未有待答問題。</div>
+    <div id="pendingList" class="empty">未有待答問題。含糊 dump 先會喺度出現。</div>
   </section>
   <section id="merge">
     <div id="mergeList" class="empty">未有合併建議。</div>
@@ -124,15 +128,26 @@ function noteCard(n, withDelete) {
     tags.appendChild(s);
   });
   art.appendChild(meta);
-  if ((n.tags || []).length) art.appendChild(tags);
   if (n.summary) {
     const sum = document.createElement("div");
     sum.className = "sum";
     sum.textContent = n.summary;
     art.appendChild(sum);
   }
+  if ((n.tags || []).length) art.appendChild(tags);
   const pre = document.createElement("pre");
   pre.textContent = n.text || "";
+  const fold = document.createElement("button");
+  fold.type = "button";
+  fold.className = "dim fold";
+  const openBody = !!(highlightId && n.id === highlightId);
+  pre.hidden = !openBody;
+  fold.textContent = openBody ? "收起正文" : "睇正文";
+  fold.addEventListener("click", () => {
+    pre.hidden = !pre.hidden;
+    fold.textContent = pre.hidden ? "睇正文" : "收起正文";
+  });
+  art.appendChild(fold);
   art.appendChild(pre);
   if (withDelete) {
     const row = document.createElement("div");
@@ -316,7 +331,7 @@ async function loadNotes() {
   if (tagFilter) notes = notes.filter((n) => (n.tags || []).includes(tagFilter));
   if (!notes.length) {
     el.className = "empty";
-    el.textContent = tagFilter ? "呢個 tag 冇筆記。" : "未有筆記。";
+    el.textContent = tagFilter ? "呢個 tag 冇筆記。" : "未有筆記。去 Dump 貼一段文字。";
     return;
   }
   el.className = "";
@@ -339,14 +354,24 @@ async function showSourceNote(id) {
   }
 }
 
+async function refreshPendingBadge() {
+  const r = await fetch("/api/questions");
+  const data = await r.json().catch(() => ({}));
+  const n = (data.questions || []).filter((q) => (q.status || "open") === "open").length;
+  const b = document.getElementById("pendingBadge");
+  b.textContent = n ? String(n) : "";
+  b.classList.toggle("on", n > 0);
+}
+
 async function loadPending() {
+  await refreshPendingBadge();
   const el = document.getElementById("pendingList");
   const r = await fetch("/api/questions");
   const data = await r.json();
   const qs = data.questions || [];
   if (!qs.length) {
     el.className = "empty";
-    el.textContent = "未有待答問題。";
+    el.textContent = "未有待答問題。含糊 dump 先會喺度出現。";
     return;
   }
   el.className = "";
@@ -444,6 +469,7 @@ document.getElementById("dumpGo").addEventListener("click", async () => {
   else msg.textContent = "已分類";
   showTab("notes");
   loadNotes();
+  refreshPendingBadge();
 });
 
 document.getElementById("searchForm").addEventListener("submit", async (e) => {
@@ -465,6 +491,8 @@ document.getElementById("searchForm").addEventListener("submit", async (e) => {
   questions.forEach((item) => nodes.push(qCard(item)));
   el.replaceChildren(...nodes);
 });
+
+refreshPendingBadge();
 </script>
 </body>
 </html>
