@@ -558,12 +558,17 @@
     article .row { margin-top: 12px; }
     #searchForm { margin-bottom: 8px; }
     #searchForm .row { margin-top: 14px; }
-    #searchForm input[type=search] {
+    #searchForm input[type=search], #askForm input[type=search] {
       font-size: 15px;
       padding: 14px 16px;
       border-radius: 12px;
       background: var(--surface);
     }
+    #askForm { margin: 8px 0 12px; }
+    #askForm .row { margin-top: 14px; }
+    #askOut { margin: 0 0 16px; }
+    #askOut .ask-ans { white-space: pre-wrap; margin: 0 0 8px; }
+    #askOut .ask-cites { display: flex; flex-wrap: wrap; gap: 8px; }
 
 
     #graphTags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
@@ -700,6 +705,11 @@
           <input type="search" id="q" placeholder="關鍵字" autocomplete="off">
           <div class="row"><button class="go" type="submit">搜</button></div>
         </form>
+        <form id="askForm">
+          <input type="search" id="askQ" placeholder="想問啲咩？" autocomplete="off">
+          <div class="row"><button class="go" type="submit" id="askGo">問呢個盒</button></div>
+        </form>
+        <div id="askOut" hidden></div>
         <p id="embedHint" class="ollama-setup" hidden>未有 embedder。本機跑 <code>ollama pull nomic-embed-text</code>。11434 通就照 keyword 搜。</p>
         <p id="embedBackfill" class="ollama-setup" hidden></p>
         <p class="row" id="searchBoxChips"></p>
@@ -753,7 +763,7 @@ const sections = [...document.querySelectorAll("section")];
 const pageCopy = {
   dump: { title: "傾倒", lede: "貼文字或拖檔。分類稍後做。" },
   notes: { title: "筆記", lede: "本機筆記。點 tag 篩選。" },
-  search: { title: "搜尋", lede: "搵筆記同問題。" },
+  search: { title: "搜尋", lede: "搵筆記同問題。或問呢個盒。" },
   pending: { title: "待答", lede: "含糊 dump 留下嘅待答問題。" },
   merge: { title: "合併", lede: "重疊筆記建議。接受或唔合。" },
   graph: { title: "圖譜", lede: "筆記關係。撳節點去筆記。" },
@@ -2384,6 +2394,67 @@ async function refreshEmbedHint() {
     if (fill) fill.hidden = true;
   }
 }
+
+document.getElementById("askForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const out = document.getElementById("askOut");
+  const btn = document.getElementById("askGo");
+  const q = document.getElementById("askQ").value;
+  out.hidden = false;
+  out.className = "";
+  out.replaceChildren();
+  btn.disabled = true;
+  const body = { q };
+  if (boxFilter != null) body.box = boxFilter;
+  let res, data;
+  try {
+    res = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    data = await res.json().catch(() => ({}));
+  } catch {
+    out.className = "err";
+    out.textContent = "問唔到";
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  function paintCites(list) {
+    if (!list.length) return;
+    const row = document.createElement("div");
+    row.className = "ask-cites";
+    list.forEach((c) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "dim";
+      b.textContent = c.label || "來源";
+      b.addEventListener("click", () => showSourceNote(c.id));
+      row.appendChild(b);
+    });
+    out.appendChild(row);
+  }
+  const cites = Array.isArray(data.cites) ? data.cites : [];
+  if (data.empty || data.error === "呢個盒冇筆記可問") {
+    out.className = "empty";
+    out.textContent = "呢個盒冇筆記可問";
+    return;
+  }
+  if (!res.ok || !data.ok) {
+    const err = document.createElement("p");
+    err.className = "err";
+    err.textContent = data.error || "連唔到 Ollama（127.0.0.1:11434）";
+    out.appendChild(err);
+    paintCites(cites);
+    return;
+  }
+  const ans = document.createElement("p");
+  ans.className = "ask-ans";
+  ans.textContent = data.answer || "";
+  out.appendChild(ans);
+  paintCites(cites);
+});
 
 document.getElementById("searchForm").addEventListener("submit", async (e) => {
   e.preventDefault();

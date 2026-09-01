@@ -1024,6 +1024,134 @@ async function searchAll(q, store) {
   };
 }
 
+const ASK_K = 6;
+const ASK_EMPTY = "呢個盒冇筆記可問";
+
+function notesInAskBox(notes, box) {
+  if (box === null || box === undefined) return notes.slice();
+  const want = normalizeBox(box);
+  return notes.filter((n) => normalizeBox(n.box) === want);
+}
+
+function keywordScore(q, n) {
+  const needle = String(q || "").trim().toLowerCase();
+  if (!needle) return 0;
+  const blob = [n.text, n.summary, n.filename, n.ext, ...(n.tags || [])].filter(Boolean).join(" ").toLowerCase();
+  if (blob.includes(needle)) return 1;
+  const nt = tokens(q);
+  if (!nt.size) return 0;
+  const ht = tokens(blob);
+  let hit = 0;
+  nt.forEach((t) => { if (ht.has(t)) hit += 1; });
+  return hit / nt.size;
+}
+
+function citeLabel(n) {
+  const s = String(n.summary || "").trim();
+  if (s) return s.slice(0, 40);
+  return String(n.text || "").trim().replace(/\s+/g, " ").slice(0, 40) || "筆記";
+}
+
+async function retrieveAsk(q, pool) {
+  const scores = new Map();
+  const emb = await embedText(q);
+  let used = "keyword";
+  if (emb.ok) {
+    const vecs = loadVectors();
+    let any = false;
+    for (const n of pool) {
+      const v = vecs[n.id];
+      if (!Array.isArray(v) || !v.length) continue;
+      scores.set(n.id, cosine(emb.embedding, v));
+      any = true;
+    }
+    if (any) used = "vector";
+  }
+  for (const n of pool) {
+    const kw = keywordScore(q, n);
+    scores.set(n.id, Math.max(scores.get(n.id) || 0, kw));
+  }
+  const ranked = pool
+    .map((n) => ({ n, s: scores.get(n.id) || 0 }))
+    .sort((a, b) => b.s - a.s);
+  let top = ranked.filter((x) => x.s > 0).slice(0, ASK_K).map((x) => x.n);
+  if (!top.length) top = pool.slice(0, ASK_K);
+  return { notes: top, used };
+}
+
+async function askBox(q, box) {
+  const question = String(q || "").trim();
+  if (!question) return { status: 400, body: { error: "要有問題" } };
+  const store = load();
+  const pool = notesInAskBox(store.notes, box);
+  if (!pool.length) return { status: 200, body: { ok: false, empty: true, error: ASK_EMPTY } };
+  const hit = await retrieveAsk(question, pool);
+  const cites = hit.notes.map((n) => ({ id: n.id, label: citeLabel(n) }));
+  const listed = await listOllamaModels();
+  if (!listed.ok) return { status: 200, body: { ok: false, error: CLASSIFY_FAIL, cites, used: hit.used } };
+  const model = pickDefaultModel(listed.models);
+  if (!model) return { status: 200, body: { ok: false, error: CLASSIFY_NO_TEXT, cites, used: hit.used } };
+  const chunks = hit.notes.map((n, i) => {
+    const body = String(n.text || "").slice(0, 800);
+    return "#" + (i + 1) + " id=" + n.id + "\n" + body;
+  }).join("\n\n");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), OLLAMA_MS);
+  try {
+    const r = await fetch(OLLAMA + "/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        model,
+        stream: false,
+        format: "json",
+        messages: [
+          {
+            role: "system",
+            content:
+              'Answer using ONLY the numbered notes. JSON only: {"answer":"...","citeIds":["id"]}. Same language as the question. If the notes do not contain the answer, say so in answer. Do not invent facts.',
+          },
+          {
+            role: "user",
+            content: ("Question: " + question + "\n\nNotes:\n" + chunks).slice(0, CLASSIFY_CHARS),
+          },
+        ],
+        options: { num_predict: CLASSIFY_NUM_PREDICT },
+      }),
+    });
+    if (!r.ok) return { status: 200, body: { ok: false, error: classifyHttpError(r.status), cites, used: hit.used } };
+    const data = await r.json();
+    const raw = data && data.message && data.message.content;
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      const m = String(raw || "").match(/\{[\s\S]*\}/);
+      if (!m) return { status: 200, body: { ok: false, error: "模型回錯誤", cites, used: hit.used } };
+      try { parsed = JSON.parse(m[0]); } catch {
+        return { status: 200, body: { ok: false, error: "模型回錯誤", cites, used: hit.used } };
+      }
+    }
+    const answer = parsed && parsed.answer != null ? String(parsed.answer).trim() : "";
+    if (!answer) return { status: 200, body: { ok: false, error: "模型回錯誤", cites, used: hit.used } };
+    const allowed = new Set(hit.notes.map((n) => n.id));
+    const citeIds = Array.isArray(parsed.citeIds) ? parsed.citeIds.map((x) => String(x)) : [];
+    const ordered = [];
+    citeIds.forEach((id) => {
+      if (allowed.has(id) && !ordered.includes(id)) ordered.push(id);
+    });
+    const shown = (ordered.length ? ordered : hit.notes.map((n) => n.id))
+      .map((id) => cites.find((c) => c.id === id))
+      .filter(Boolean);
+    return { status: 200, body: { ok: true, answer, cites: shown, used: hit.used } };
+  } catch (err) {
+    return { status: 200, body: { ok: false, error: classifyCatchError(err), cites, used: hit.used } };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function searchHay(q, store) {
   const needle = q.trim().toLowerCase();
   if (!needle) return { notes: [], questions: [] };
@@ -1483,6 +1611,20 @@ const server = http.createServer(async (req, res) => {
   if (method === "GET" && u.pathname === "/api/search") {
     const out = await searchAll(u.searchParams.get("q") || "", load());
     json(res, 200, out);
+    return;
+  }
+
+  if (method === "POST" && u.pathname === "/api/ask") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const box = Object.prototype.hasOwnProperty.call(payload, "box") ? payload.box : null;
+    const out = await askBox(payload && payload.q, box);
+    json(res, out.status, out.body);
     return;
   }
 
