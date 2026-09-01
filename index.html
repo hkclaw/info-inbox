@@ -1103,7 +1103,7 @@ async function loadNotes() {
 }
 
 
-const graphState = { nodes: [], edges: [], tags: [], activeTag: null, scale: 1, tx: 0, ty: 0, drag: null };
+const graphState = { nodes: [], edges: [], tags: [], activeTag: null, scale: 1, tx: 0, ty: 0, drag: null, cssW: 0, cssH: 0, dpr: 1 };
 
 function graphLabel(n) {
   const raw = n.kind === "tag"
@@ -1167,6 +1167,21 @@ function layoutGraph(nodes, edges, w, h) {
   }
 }
 
+
+function sizeGraphCanvas(c) {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const cssW = Math.max(1, c.clientWidth || (c.parentElement && c.parentElement.clientWidth) || 800);
+  const cssH = Math.max(1, c.clientHeight || Math.min(560, Math.round(cssW * 0.62)));
+  c.width = Math.round(cssW * dpr);
+  c.height = Math.round(cssH * dpr);
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  graphState.cssW = cssW;
+  graphState.cssH = cssH;
+  graphState.dpr = dpr;
+  return { w: cssW, h: cssH, dpr };
+}
+
 async function loadGraph() {
   const c = document.getElementById("graphCanvas");
   const em = document.getElementById("graphEmpty");
@@ -1185,10 +1200,9 @@ async function loadGraph() {
   }
   em.hidden = true;
   c.style.display = "block";
-  const w = Math.max(320, c.parentElement.clientWidth || 800);
-  c.width = w;
-  c.height = Math.min(560, Math.max(360, Math.round(w * 0.62)));
-  const cx = c.width / 2, cy = c.height / 2;
+  const sized = sizeGraphCanvas(c);
+  const w = sized.w, h = sized.h;
+  const cx = w / 2, cy = h / 2;
   const nodes = notes.map((n, i) => {
     const a = (i * 137.508 * Math.PI) / 180;
     const rad = 70 + Math.sqrt(i + 1) * 36;
@@ -1235,7 +1249,7 @@ async function loadGraph() {
     });
     edges.push({ a: pid, b: q.noteId, kind: "pending" });
   });
-  layoutGraph(nodes, edges, w, c.height);
+  layoutGraph(nodes, edges, w, h);
   graphState.nodes = nodes;
   graphState.edges = edges;
   graphState.tags = Object.keys(tagMap).sort();
@@ -1269,9 +1283,13 @@ function graphDraw() {
   const c = document.getElementById("graphCanvas");
   if (!c) return;
   const ctx = c.getContext("2d");
+  const dpr = graphState.dpr || Math.max(1, window.devicePixelRatio || 1);
+  const cssW = graphState.cssW || c.clientWidth;
+  const cssH = graphState.cssH || c.clientHeight;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
   const byId = {};
   graphState.nodes.forEach((n) => { byId[n.id] = n; });
-  ctx.clearRect(0, 0, c.width, c.height);
   ctx.save();
   ctx.translate(graphState.tx, graphState.ty);
   ctx.scale(graphState.scale, graphState.scale);
@@ -1284,15 +1302,15 @@ function graphDraw() {
     if (e.kind === "pending") {
       ctx.setLineDash([5, 4]);
       ctx.strokeStyle = "rgba(201,143,99,0.28)";
-      ctx.lineWidth = 1.1;
+      ctx.lineWidth = 1.25;
     } else if (e.kind === "merge") {
       ctx.setLineDash([]);
       ctx.strokeStyle = "rgba(201,143,99,0.55)";
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.5;
     } else {
       ctx.setLineDash([]);
       ctx.strokeStyle = "rgba(201,143,99,0.22)";
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1.25;
     }
     ctx.stroke();
     ctx.setLineDash([]);
@@ -1307,15 +1325,26 @@ function graphDraw() {
     ctx.fillStyle = "transparent";
     ctx.fill();
     ctx.strokeStyle = dim ? "rgba(201,143,99,0.28)" : "#c98f63";
-    ctx.lineWidth = n.kind === "tag" ? 1.1 : 1.5;
+    ctx.lineWidth = Math.max(1.25, n.kind === "tag" ? 1.25 : 1.5);
     ctx.stroke();
     ctx.fillStyle = dim ? "rgba(232,226,214,0.35)" : "#e8e2d6";
     ctx.font = (n.kind === "tag" ? "10px " : "11px ") + "system-ui,sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(graphLabel(n), n.x, n.y + r + 12);
+    ctx.textBaseline = "top";
+    ctx.fillText(graphLabel(n), Math.round(n.x), Math.round(n.y + r + 8));
   });
   ctx.restore();
 }
+
+
+window.addEventListener("resize", () => {
+  const sec = document.getElementById("graph");
+  const c = document.getElementById("graphCanvas");
+  if (!sec || !sec.classList.contains("on") || !c || c.style.display === "none") return;
+  const sized = sizeGraphCanvas(c);
+  if (graphState.nodes.length) layoutGraph(graphState.nodes, graphState.edges, sized.w, sized.h);
+  graphDraw();
+});
 
 (function bindGraphCanvas() {
   const c = document.getElementById("graphCanvas");
