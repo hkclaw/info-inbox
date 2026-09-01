@@ -18,7 +18,16 @@ Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1
 - See notes (empty until you dump)
 - Search notes and questions
 - Pending questions queue (empty until the model asks)
-- POST /api/ingest stores the dump locally. Classification via Ollama http://127.0.0.1:11434 (llama3.2) is not wired in this slice; ingest does not invent tags. If the model is offline later, the page must show a visible error instead of a fake category.
+- POST /api/ingest stores the dump, then classifies with Ollama at http://127.0.0.1:11434 (llama3.2). Success writes tags and a one-line summary and clears classifyError. If Ollama is down, the note stays, tags stay empty, and the page shows 「連唔到 Ollama（127.0.0.1:11434）」. No invented tags.
+
+## Classify
+
+Needs a local Ollama. Default model llama3.2 at http://127.0.0.1:11434.
+
+    ollama serve
+    ollama pull llama3.2
+
+Dump still saves if the model is offline. The page then shows 「連唔到 Ollama（127.0.0.1:11434）」 and does not invent tags. Vague dumps may enqueue an open question; answering is not in this slice.
 
 ## Data
 

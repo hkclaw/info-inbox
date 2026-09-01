@@ -28,12 +28,13 @@
     article .meta { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
     article pre { white-space: pre-wrap; margin: 0; font: inherit; }
     .tag { display: inline-block; margin-right: 6px; color: var(--acc); font-size: 12px; }
+    .sum { font-weight: 600; margin: 0 0 6px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
 <header>
   <h1>info-inbox</h1>
-  <p class="sub">本機 inbox。資料只存呢部機。未接 Ollama。</p>
+  <p class="sub">本機 inbox。資料只存呢部機。分類用本機 Ollama llama3.2。</p>
   <nav>
     <button type="button" data-tab="dump" class="on">Dump</button>
     <button type="button" data-tab="notes">Notes</button>
@@ -86,10 +87,16 @@ function noteCard(n) {
     s.textContent = t;
     tags.appendChild(s);
   });
-  const pre = document.createElement("pre");
-  pre.textContent = n.summary || n.text || "";
   art.appendChild(meta);
   if ((n.tags || []).length) art.appendChild(tags);
+  if (n.summary) {
+    const sum = document.createElement("div");
+    sum.className = "sum";
+    sum.textContent = n.summary;
+    art.appendChild(sum);
+  }
+  const pre = document.createElement("pre");
+  pre.textContent = n.text || "";
   art.appendChild(pre);
   return art;
 }
@@ -156,7 +163,9 @@ document.getElementById("dumpGo").addEventListener("click", async () => {
   }
   document.getElementById("dumpText").value = "";
   msg.hidden = false;
-  msg.textContent = data.note && data.note.classifyError ? data.note.classifyError : "已存";
+  if (data.note && data.note.classifyError) msg.textContent = data.note.classifyError;
+  else if (data.question) msg.textContent = "已存，有待答問題";
+  else msg.textContent = "已分類";
   showTab("notes");
   loadNotes();
 });

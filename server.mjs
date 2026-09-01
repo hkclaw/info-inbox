@@ -8,6 +8,10 @@ const BIND = process.env.BIND || "127.0.0.1";
 const PORT = Number(process.env.PORT || 3741);
 const dataDir = path.join(root, "data");
 const storeFile = path.join(dataDir, "inbox.json");
+const OLLAMA = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
+const MODEL = process.env.OLLAMA_MODEL || "llama3.2";
+const OLLAMA_MS = Number(process.env.OLLAMA_MS || 20000);
+const CLASSIFY_FAIL = "連唔到 Ollama（127.0.0.1:11434）";
 
 function emptyStore() {
   return { notes: [], questions: [] };
@@ -56,6 +60,58 @@ function sendFile(res, file) {
     });
     res.end(data);
   });
+}
+
+
+async function classify(text) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), OLLAMA_MS);
+  try {
+    const r = await fetch(OLLAMA + "/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        model: MODEL,
+        stream: false,
+        format: "json",
+        messages: [
+          {
+            role: "system",
+            content:
+              'Classify a personal note. JSON only: {"tags":["project-or-topic"],"summary":"one sentence","question":null}. Two to five short tags. If the dump is too vague to file, tags may be empty and question must be a short clarifying ask. Do not invent facts that are not in the text.',
+          },
+          { role: "user", content: String(text).slice(0, 8000) },
+        ],
+      }),
+    });
+    if (!r.ok) return { ok: false };
+    const data = await r.json();
+    const raw = data && data.message && data.message.content;
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      const m = String(raw || "").match(/\{[\s\S]*\}/);
+      if (!m) return { ok: false };
+      try {
+        parsed = JSON.parse(m[0]);
+      } catch {
+        return { ok: false };
+      }
+    }
+    const tags = Array.isArray(parsed.tags)
+      ? parsed.tags.map((x) => String(x).trim()).filter(Boolean).slice(0, 8)
+      : [];
+    const summary = parsed.summary ? String(parsed.summary).trim() : "";
+    const question = parsed.question ? String(parsed.question).trim() : "";
+    if (!tags.length && !summary && !question) return { ok: false };
+    return { ok: true, tags, summary: summary || null, question: question || null };
+  } catch {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function searchHay(q, store) {
@@ -116,11 +172,36 @@ const server = http.createServer(async (req, res) => {
       createdAt: new Date().toISOString(),
       tags: [],
       summary: null,
-      classifyError: "未分類（模型未接）",
+      classifyError: CLASSIFY_FAIL,
     };
     store.notes.unshift(note);
     save(store);
-    json(res, 200, { ok: true, note, classified: false });
+    const result = await classify(text);
+    const next = load();
+    const row = next.notes.find((n) => n.id === note.id) || note;
+    let queued = null;
+    if (result.ok) {
+      row.tags = result.tags;
+      row.summary = result.summary;
+      row.classifyError = null;
+      if (result.question) {
+        queued = {
+          id: String(Date.now() + 1),
+          text: result.question,
+          status: "open",
+          answer: null,
+          noteId: row.id,
+          createdAt: new Date().toISOString(),
+        };
+        next.questions.unshift(queued);
+      }
+    } else {
+      row.tags = [];
+      row.summary = null;
+      row.classifyError = CLASSIFY_FAIL;
+    }
+    save(next);
+    json(res, 200, { ok: true, note: row, classified: !!result.ok, question: queued });
     return;
   }
 
