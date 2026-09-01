@@ -217,6 +217,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const reclass = /^\/api\/notes\/([^/]+)\/reclassify$/.exec(u.pathname);
+  if (method === "POST" && reclass) {
+    const id = decodeURIComponent(reclass[1]);
+    const store = load();
+    const row = store.notes.find((n) => n.id === id);
+    if (!row) {
+      json(res, 404, { error: "搵唔到呢條筆記" });
+      return;
+    }
+    const result = await classify(row.text || "");
+    if (result.ok) {
+      row.tags = result.tags;
+      row.summary = result.summary;
+      row.classifyError = null;
+    } else {
+      row.classifyError = CLASSIFY_FAIL;
+    }
+    save(store);
+    json(res, 200, { ok: true, note: row, classified: !!result.ok });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/questions") {
     json(res, 200, { questions: load().questions });
     return;

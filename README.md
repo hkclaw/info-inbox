@@ -42,6 +42,8 @@ Click a tag chip on the Notes tab to show only notes with that tag. 「清篩選
 
 Each card has 刪除. Confirm runs DELETE /api/notes/:id and removes that note from data/. Missing ids return 「搵唔到呢條筆記」. Questions are not deleted with the note.
 
+Notes with a classifyError or no tags show 「重新分類」. That POSTs /api/notes/:id/reclassify to the same local Ollama (llama3.2). Success writes tags and summary; if Ollama is down the text stays, tags are not invented, and 「連唔到 Ollama（127.0.0.1:11434）」 is shown.
+
 ## Data
 
 JSON file under data/ (gitignored). Notes: id, text, createdAt, tags, summary, classifyError. Questions: id, text, status (open | answered), answer, createdAt.

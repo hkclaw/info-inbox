@@ -132,13 +132,34 @@ function noteCard(n, withDelete) {
   if (withDelete) {
     const row = document.createElement("div");
     row.className = "row";
+    const needRe = !!(n.classifyError || !(n.tags || []).length);
+    const err = document.createElement("p");
+    err.className = "err";
+    err.hidden = true;
+    if (needRe) {
+      const rec = document.createElement("button");
+      rec.type = "button";
+      rec.className = "go";
+      rec.textContent = "重新分類";
+      rec.addEventListener("click", async () => {
+        err.hidden = true;
+        rec.disabled = true;
+        const r = await fetch("/api/notes/" + encodeURIComponent(n.id) + "/reclassify", { method: "POST" });
+        const data = await r.json().catch(() => ({}));
+        rec.disabled = false;
+        if (!r.ok) {
+          err.hidden = false;
+          err.textContent = data.error || "分類唔到";
+          return;
+        }
+        loadNotes();
+      });
+      row.appendChild(rec);
+    }
     const del = document.createElement("button");
     del.type = "button";
     del.className = "del";
     del.textContent = "刪除";
-    const err = document.createElement("p");
-    err.className = "err";
-    err.hidden = true;
     del.addEventListener("click", async () => {
       if (!confirm("刪除呢條筆記？")) return;
       err.hidden = true;
