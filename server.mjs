@@ -433,7 +433,12 @@ const server = http.createServer(async (req, res) => {
   if (method === "GET" && u.pathname === "/api/models") {
     const listed = await listOllamaModels();
     if (!listed.ok) {
-      json(res, 200, { ok: false, models: [], selected: null });
+      json(res, 200, {
+        ok: false,
+        models: [],
+        selected: null,
+        defaultModel: DEFAULT_MODEL,
+      });
       return;
     }
     const selected = pickDefaultModel(listed.models);
@@ -441,7 +446,12 @@ const server = http.createServer(async (req, res) => {
       const pref = loadModelPreference();
       if (pref !== selected) saveModelPreference(selected);
     }
-    json(res, 200, { ok: true, models: listed.models, selected: selected || null });
+    json(res, 200, {
+      ok: true,
+      models: listed.models,
+      selected: selected || null,
+      defaultModel: DEFAULT_MODEL,
+    });
     return;
   }
 

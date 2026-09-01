@@ -268,6 +268,17 @@
     #dump .paper-foot .model-pick select:disabled {
       opacity: 0.55;
     }
+    #dump .paper-foot .ollama-setup {
+      margin: 0;
+      max-width: 36rem;
+      font-size: 13px;
+      line-height: 1.5;
+      color: color-mix(in srgb, var(--paper-ink) 72%, transparent);
+    }
+    #dump .paper-foot .ollama-setup code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
     #dump .paper-foot .dim {
       color: color-mix(in srgb, var(--paper-ink) 72%, transparent);
     }
@@ -514,6 +525,9 @@
               <label class="model-pick">模型
                 <select id="ollamaModel" disabled aria-label="Ollama model"></select>
               </label>
+              <p id="ollamaSetup" class="ollama-setup" hidden>
+                Ollama 未開（127.0.0.1:11434）。本機跑 <code>ollama serve</code>，再 <code>ollama pull <span id="ollamaSetupModel">llama3.2</span></code>。模型下拉會空到 Ollama 上線為止。
+              </p>
             </div>
             <button class="go" type="button" id="dumpGo">存入</button>
           </div>
@@ -552,20 +566,39 @@ const pageCopy = {
   merge: { title: "合併", lede: "重疊筆記建議。接受或唔合。" },
 };
 
+function setOllamaSetupHint(show, defaultModel) {
+  const hint = document.getElementById("ollamaSetup");
+  const modelEl = document.getElementById("ollamaSetupModel");
+  if (!hint) return;
+  if (modelEl) {
+    const name = String(defaultModel || "llama3.2").trim() || "llama3.2";
+    modelEl.textContent = name;
+  }
+  hint.hidden = !show;
+}
+
 async function loadOllamaModels() {
   const sel = document.getElementById("ollamaModel");
   if (!sel) return;
   sel.innerHTML = "";
   sel.disabled = true;
-  let data = { ok: false, models: [], selected: null };
+  let data = { ok: false, models: [], selected: null, defaultModel: "llama3.2" };
   try {
     const r = await fetch("/api/models");
     data = await r.json().catch(() => data);
   } catch {
     /* Ollama / server unreachable — leave empty */
   }
+  const defaultModel = data.defaultModel || "llama3.2";
   const models = Array.isArray(data.models) ? data.models.filter(Boolean) : [];
-  if (!data.ok || !models.length) {
+  if (!data.ok) {
+    sel.innerHTML = "";
+    sel.disabled = true;
+    setOllamaSetupHint(true, defaultModel);
+    return;
+  }
+  setOllamaSetupHint(false, defaultModel);
+  if (!models.length) {
     sel.innerHTML = "";
     sel.disabled = true;
     return;
