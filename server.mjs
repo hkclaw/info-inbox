@@ -152,6 +152,39 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const ansPath = /^\/api\/questions\/([^/]+)\/answer$/.exec(u.pathname);
+  if (method === "POST" && ansPath) {
+    const id = decodeURIComponent(ansPath[1]);
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const answer = String(payload.answer || "").trim();
+    if (!answer) {
+      json(res, 400, { error: "要有答案" });
+      return;
+    }
+    const store = load();
+    const row = store.questions.find((q) => q.id === id);
+    if (!row) {
+      json(res, 404, { error: "搵唔到呢條問題" });
+      return;
+    }
+    if (row.status === "answered") {
+      json(res, 409, { error: "呢條已答過" });
+      return;
+    }
+    row.answer = answer;
+    row.status = "answered";
+    row.answeredAt = new Date().toISOString();
+    save(store);
+    json(res, 200, { ok: true, question: row });
+    return;
+  }
+
   if (method === "POST" && u.pathname === "/api/ingest") {
     let payload;
     try {

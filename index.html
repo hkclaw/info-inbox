@@ -101,7 +101,7 @@ function noteCard(n) {
   return art;
 }
 
-function qCard(item) {
+function qCard(item, canAnswer) {
   const art = document.createElement("article");
   const meta = document.createElement("div");
   meta.className = "meta";
@@ -114,6 +114,39 @@ function qCard(item) {
     const a = document.createElement("pre");
     a.textContent = "答：" + item.answer;
     art.appendChild(a);
+  }
+  if (canAnswer && (item.status || "open") === "open") {
+    const ta = document.createElement("textarea");
+    ta.placeholder = "答呢條";
+    ta.style.minHeight = "72px";
+    const row = document.createElement("div");
+    row.className = "row";
+    const btn = document.createElement("button");
+    btn.className = "go";
+    btn.type = "button";
+    btn.textContent = "送出";
+    const err = document.createElement("p");
+    err.className = "err";
+    err.hidden = true;
+    btn.addEventListener("click", async () => {
+      err.hidden = true;
+      const r = await fetch("/api/questions/" + encodeURIComponent(item.id) + "/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ answer: ta.value }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        err.hidden = false;
+        err.textContent = data.error || "答唔到";
+        return;
+      }
+      loadPending();
+    });
+    row.appendChild(btn);
+    art.appendChild(ta);
+    art.appendChild(row);
+    art.appendChild(err);
   }
   return art;
 }
@@ -143,7 +176,7 @@ async function loadPending() {
     return;
   }
   el.className = "";
-  el.replaceChildren(...qs.map(qCard));
+  el.replaceChildren(...qs.map((item) => qCard(item, true)));
 }
 
 document.getElementById("dumpGo").addEventListener("click", async () => {
