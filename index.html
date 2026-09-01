@@ -593,6 +593,7 @@
       <div class="head-actions">
         <button type="button" class="backup" id="backup">下載備份</button>
         <button type="button" class="backup" id="restoreBackup">還原備份</button>
+        <button type="button" class="backup" id="wipeLocal">清空本機資料</button>
       </div>
       <input type="file" id="restoreFile" accept="application/json,.json" hidden>
     </header>
@@ -1959,6 +1960,21 @@ document.getElementById("restoreFile").addEventListener("change", async () => {
   }
   if (!res.ok) {
     alert(body.error || "還原唔到");
+    return;
+  }
+  location.reload();
+});
+
+document.getElementById("wipeLocal").addEventListener("click", async () => {
+  if (!confirm("呢個會刪晒盒內筆記、問題、合併同向量。確認清空？")) return;
+  const r = await fetch("/api/wipe", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    alert(body.error || "清空唔到");
     return;
   }
   location.reload();

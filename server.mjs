@@ -413,6 +413,67 @@ async function extractDocx(data, filename) {
   }
 }
 
+
+function extractRtf(data, filename) {
+  try {
+    const raw = Buffer.from(data).toString("latin1");
+    if (!/\\rtf/i.test(raw.slice(0, 80))) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    const text = raw
+      .replace(/\\par[d]?/g, "\n")
+      .replace(/\\tab/g, "\t")
+      .replace(/\\line/g, "\n")
+      .replace(/\\'([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\u(-?\d+)\s?/g, (_, n) => {
+        let c = Number(n);
+        if (c < 0) c += 65536;
+        try { return String.fromCharCode(c); } catch { return ""; }
+      })
+      .replace(/\\[a-zA-Z]+\-?\d* ?/g, "")
+      .replace(/[{}]/g, "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (!text) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    return { text, supported: true };
+  } catch {
+    return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+  }
+}
+
+function xmlLooseText(xml) {
+  return String(xml || "")
+    .replace(/<text:p\b[^>]*>/g, "\n")
+    .replace(/<text:h\b[^>]*>/g, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function extractOdt(data, filename) {
+  try {
+    const files = unzipNamed(Buffer.from(data), (n) => /(^|\/)content\.xml$/i.test(n));
+    const xml = files.map((f) => f.text).join("\n");
+    const text = xmlLooseText(xml);
+    if (!text) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    return { text, supported: true };
+  } catch {
+    return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+  }
+}
+
 async function extractFileText(filename, data) {
   const ext = extOf(filename);
   if (TEXT_EXTS.has(ext)) {
@@ -442,6 +503,12 @@ async function extractFileText(filename, data) {
   }
   if (ext === ".ppt") {
     return extractPpt(data, filename);
+  }
+  if (ext === ".rtf") {
+    return extractRtf(data, filename);
+  }
+  if (ext === ".odt") {
+    return extractOdt(data, filename);
   }
   if (ext === ".xlsx" || ext === ".xls") {
     try {
@@ -860,6 +927,24 @@ const server = http.createServer(async (req, res) => {
     }
     save({ notes: payload.notes, questions: payload.questions, dismissedMerges });
     saveVectors(nextVectors);
+    json(res, 200, { ok: true });
+    return;
+  }
+
+  if (method === "POST" && u.pathname === "/api/wipe") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "要確認" });
+      return;
+    }
+    if (!payload || !payload.confirm) {
+      json(res, 400, { error: "要確認" });
+      return;
+    }
+    save(emptyStore());
+    saveVectors({});
     json(res, 200, { ok: true });
     return;
   }
