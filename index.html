@@ -560,6 +560,8 @@
       <h1 id="pageTitle">傾倒</h1>
       <p class="lede" id="pageLede">貼文字或拖檔。分類稍後做。</p>
       <button type="button" class="backup" id="backup">下載備份</button>
+      <button type="button" class="backup" id="restoreBackup">還原備份</button>
+      <input type="file" id="restoreFile" accept="application/json,.json" hidden>
     </header>
     <main class="canvas">
       <section id="dump" class="on">
@@ -1611,6 +1613,35 @@ document.getElementById("searchForm").addEventListener("submit", async (e) => {
   notes.forEach((n) => nodes.push(noteCard(n)));
   questions.forEach((item) => nodes.push(qCard(item)));
   el.replaceChildren(...nodes);
+});
+
+
+document.getElementById("restoreBackup").addEventListener("click", () => {
+  document.getElementById("restoreFile").click();
+});
+document.getElementById("restoreFile").addEventListener("change", async () => {
+  const input = document.getElementById("restoreFile");
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  if (!confirm("呢個會覆蓋而家盒內全部筆記同問題。確認還原？")) return;
+  let res, body;
+  try {
+    res = await fetch("/api/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: await file.text(),
+    });
+    body = await res.json().catch(() => ({}));
+  } catch {
+    alert("還原唔到");
+    return;
+  }
+  if (!res.ok) {
+    alert(body.error || "還原唔到");
+    return;
+  }
+  location.reload();
 });
 
 document.getElementById("backup").addEventListener("click", async () => {

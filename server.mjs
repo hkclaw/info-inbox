@@ -500,6 +500,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "POST" && u.pathname === "/api/import") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "");
+    } catch {
+      json(res, 400, { error: "備份檔唔啱格式" });
+      return;
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Array.isArray(payload.notes) || !Array.isArray(payload.questions)) {
+      json(res, 400, { error: "備份檔唔啱格式" });
+      return;
+    }
+    const dismissedMerges = Array.isArray(payload.dismissedMerges) ? payload.dismissedMerges : [];
+    save({ notes: payload.notes, questions: payload.questions, dismissedMerges });
+    json(res, 200, { ok: true });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/export") {
     const store = load();
     const body = JSON.stringify({
