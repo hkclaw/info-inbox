@@ -321,6 +321,53 @@ function xmlSlideText(xml) {
   return parts.join(" ");
 }
 
+
+function utf16Runs(buf, minLen) {
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  const out = [];
+  const need = minLen || 6;
+  for (let i = 0; i + 1 < b.length; i += 2) {
+    const chars = [];
+    let j = i;
+    while (j + 1 < b.length) {
+      const c = b[j] | (b[j + 1] << 8);
+      if (c === 0) break;
+      const ok = (c >= 0x20 && c <= 0xd7ff) || (c >= 0xe000 && c <= 0xfffd);
+      if (!ok) break;
+      chars.push(String.fromCharCode(c));
+      j += 2;
+    }
+    if (chars.length >= need) {
+      const s = chars.join("").trim();
+      if (s && /[\u4e00-\u9fffA-Za-z0-9]/.test(s)) out.push(s);
+      i = j;
+    }
+  }
+  return out;
+}
+
+function extractPpt(data, filename) {
+  try {
+    const buf = Buffer.from(data);
+    if (buf[0] === 0x50 && buf[1] === 0x4b) return extractPptx(buf, filename);
+    let blob = buf;
+    try {
+      if (XLSX.CFB && typeof XLSX.CFB.read === "function") {
+        const cfb = XLSX.CFB.read(buf, { type: "buffer" });
+        const entry = (XLSX.CFB.find && (XLSX.CFB.find(cfb, "PowerPoint Document") || XLSX.CFB.find(cfb, "/PowerPoint Document")));
+        if (entry && entry.content) blob = Buffer.from(entry.content);
+      }
+    } catch { /* scan whole OLE */ }
+    const text = utf16Runs(blob, 6).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    if (!text) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    return { text, supported: true };
+  } catch {
+    return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+  }
+}
+
 function extractPptx(data, filename) {
   try {
     const slides = unzipNamed(Buffer.from(data), (n) => /^ppt\/slides\/slide\d+\.xml$/i.test(n));
@@ -392,6 +439,9 @@ async function extractFileText(filename, data) {
   }
   if (ext === ".pptx") {
     return extractPptx(data, filename);
+  }
+  if (ext === ".ppt") {
+    return extractPpt(data, filename);
   }
   if (ext === ".xlsx" || ext === ".xls") {
     try {
