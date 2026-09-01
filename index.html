@@ -623,6 +623,7 @@
             <p id="ollamaSetup" class="ollama-setup" hidden>
               Ollama 未開（127.0.0.1:11434）。本機跑 <code>ollama serve</code>，再 <code>ollama pull <span id="ollamaSetupModel">llama3.2</span></code>。模型下拉會空到 Ollama 上線為止。
             </p>
+            <p id="ollamaNoText" class="ollama-setup" hidden>未有合適文字模型。本機跑 <code>ollama pull llama3.2</code>。</p>
           </div>
         </div>
         <p id="dumpWait" class="dump-wait" hidden>
@@ -689,9 +690,12 @@ function setOllamaLive(ok, modelName) {
   const live = document.getElementById("ollamaLive");
   if (!live) return;
   live.hidden = false;
-  if (ok) {
+  if (ok && modelName) {
     live.classList.remove("down");
-    live.textContent = "就緒 · " + (String(modelName || "").trim() || "llama3.2");
+    live.textContent = "就緒 · " + String(modelName).trim();
+  } else if (ok) {
+    live.classList.add("down");
+    live.textContent = "未有合適文字模型";
   } else {
     live.classList.add("down");
     live.textContent = "連唔到 Ollama（127.0.0.1:11434）";
@@ -707,6 +711,14 @@ function setOllamaSetupHint(show, defaultModel) {
     modelEl.textContent = name;
   }
   hint.hidden = !show;
+  const noText = document.getElementById("ollamaNoText");
+  if (noText) noText.hidden = true;
+}
+function setOllamaNoTextHint(show) {
+  const noText = document.getElementById("ollamaNoText");
+  const hint = document.getElementById("ollamaSetup");
+  if (noText) noText.hidden = !show;
+  if (show && hint) hint.hidden = true;
 }
 
 async function refreshDumpOnboard() {
@@ -746,21 +758,22 @@ async function loadOllamaModels() {
     setDumpOnboardOllama(false);
     return;
   }
-  setOllamaSetupHint(false, defaultModel);
-  if (!models.length) {
+  const selected = data.selected && models.includes(data.selected) ? data.selected : null;
+  if (!selected) {
     sel.innerHTML = "";
     sel.disabled = true;
-    setOllamaLive(false);
-    setDumpOnboardOllama(true, defaultModel);
+    setOllamaNoTextHint(true);
+    setOllamaLive(true, "");
+    setDumpOnboardOllama(false);
     return;
   }
+  setOllamaSetupHint(false, defaultModel);
   for (const name of models) {
     const opt = document.createElement("option");
     opt.value = name;
     opt.textContent = name;
     sel.appendChild(opt);
   }
-  const selected = data.selected && models.includes(data.selected) ? data.selected : models[0];
   sel.value = selected;
   sel.disabled = false;
   setOllamaLive(true, selected);

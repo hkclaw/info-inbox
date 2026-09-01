@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { PDFParse } from "pdf-parse";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
+import zlib from "node:zlib";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const BIND = process.env.BIND || "127.0.0.1";
@@ -19,6 +20,7 @@ const CLASSIFY_CHARS = 4000;
 const CLASSIFY_NUM_PREDICT = 256;
 const TAGS_MS = Number(process.env.OLLAMA_TAGS_MS || 3000);
 const CLASSIFY_FAIL = "連唔到 Ollama（127.0.0.1:11434）";
+const CLASSIFY_NO_TEXT = "未有合適文字模型";
 const CLASSIFY_TIMEOUT = "模型回逾時";
 function classifyHttpError(status) {
   return "模型回錯誤（HTTP " + status + "）";
@@ -57,8 +59,9 @@ function isDefaultModelName(name) {
   return n === "llama3.2" || n.startsWith("llama3.2:");
 }
 
-function isVisionModel(name) {
-  return /vl|vision/i.test(String(name || ""));
+function isBlockedAutoModel(name) {
+  const n = String(name || "").toLowerCase();
+  return /vl|vision/.test(n) || /27b|32b/.test(n);
 }
 
 function pickDefaultModel(models) {
@@ -66,9 +69,8 @@ function pickDefaultModel(models) {
   const llama = list.find(isDefaultModelName);
   if (llama) return llama;
   const pref = loadModelPreference();
-  if (pref && list.includes(pref) && !isVisionModel(pref)) return pref;
-  const text = list.find((m) => !isVisionModel(m));
-  return text || list[0] || null;
+  if (pref && list.includes(pref) && !isBlockedAutoModel(pref)) return pref;
+  return list.find((m) => !isBlockedAutoModel(m)) || null;
 }
 
 async function listOllamaModels() {
@@ -93,7 +95,7 @@ async function listOllamaModels() {
 
 function getActiveModel() {
   const pref = loadModelPreference();
-  if (pref && !isVisionModel(pref)) return pref;
+  if (pref && !isBlockedAutoModel(pref)) return pref;
   return DEFAULT_MODEL;
 }
 
@@ -271,6 +273,63 @@ async function extractSpreadsheet(data) {
 }
 
 
+
+function unzipNamed(buf, keep) {
+  const out = [];
+  let i = 0;
+  while (i + 30 <= buf.length) {
+    if (buf.readUInt32LE(i) !== 0x04034b50) break;
+    const method = buf.readUInt16LE(i + 8);
+    const flags = buf.readUInt16LE(i + 6);
+    const compSize = buf.readUInt32LE(i + 18);
+    const nameLen = buf.readUInt16LE(i + 26);
+    const extraLen = buf.readUInt16LE(i + 28);
+    const name = buf.slice(i + 30, i + 30 + nameLen).toString("utf8");
+    let start = i + 30 + nameLen + extraLen;
+    let size = compSize;
+    if (flags & 8) {
+      /* data descriptor; skip unsupported pptx */
+      break;
+    }
+    const comp = buf.slice(start, start + size);
+    i = start + size;
+    if (!keep(name)) continue;
+    let raw;
+    try {
+      raw = method === 0 ? comp : zlib.inflateRawSync(comp);
+    } catch {
+      continue;
+    }
+    out.push({ name, text: raw.toString("utf8") });
+  }
+  return out;
+}
+
+function xmlSlideText(xml) {
+  const parts = [];
+  const re = /<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/g;
+  let m;
+  while ((m = re.exec(xml))) {
+    const s = m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').trim();
+    if (s) parts.push(s);
+  }
+  return parts.join(" ");
+}
+
+function extractPptx(data, filename) {
+  try {
+    const slides = unzipNamed(Buffer.from(data), (n) => /^ppt\/slides\/slide\d+\.xml$/i.test(n));
+    slides.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const text = slides.map((s) => xmlSlideText(s.text)).filter(Boolean).join("\n\n").trim();
+    if (!text) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    return { text, supported: true };
+  } catch {
+    return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+  }
+}
+
 async function extractDocx(data, filename) {
   try {
     const result = await mammoth.extractRawText({ buffer: data });
@@ -304,6 +363,9 @@ async function extractFileText(filename, data) {
   }
   if (ext === ".docx") {
     return extractDocx(data, filename);
+  }
+  if (ext === ".pptx") {
+    return extractPptx(data, filename);
   }
   if (ext === ".xlsx" || ext === ".xls") {
     try {
@@ -397,6 +459,10 @@ function sendFile(res, file) {
 
 
 async function classify(text) {
+  const listed = await listOllamaModels();
+  if (!listed.ok) return { ok: false, error: CLASSIFY_FAIL };
+  const model = pickDefaultModel(listed.models);
+  if (!model) return { ok: false, error: CLASSIFY_NO_TEXT };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), OLLAMA_MS);
   try {
@@ -405,7 +471,7 @@ async function classify(text) {
       headers: { "content-type": "application/json" },
       signal: ctrl.signal,
       body: JSON.stringify({
-        model: getActiveModel(),
+        model,
         stream: false,
         format: "json",
         messages: [
