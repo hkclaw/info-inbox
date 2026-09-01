@@ -284,6 +284,9 @@
       font-size: 13px;
     }
     #boxChips { flex-wrap: wrap; gap: 6px; }
+    .box-manage { align-items: center; gap: 8px; flex-wrap: wrap; }
+    .box-manage input { max-width: 160px; padding: 5px 8px; }
+
     .box-name { color: #c98f63; }
 
     #dump .paper-foot .ollama-setup {
@@ -680,6 +683,12 @@
       <section id="notes">
         <p id="noteFilter" hidden><span id="noteFilterLabel"></span> <button type="button" class="dim" id="noteFilterClear">清篩選／顯示全部</button></p>
         <p class="row" id="boxChips"></p>
+        <p class="row box-manage" hidden>
+          <input class="box-rename" placeholder="新盒名" autocomplete="off">
+          <button type="button" class="dim box-rename-go">改名</button>
+          <button type="button" class="del box-unbox">刪盒</button>
+          <span class="err box-manage-err" hidden></span>
+        </p>
         <p class="row" id="reclassRow"><button type="button" class="dim" id="reclassMissing">重新分類未分類</button></p>
         <div id="notesList" class="empty">未有筆記。去傾倒貼一段文字。</div>
       </section>
@@ -691,9 +700,22 @@
         <p id="embedHint" class="ollama-setup" hidden>未有 embedder。本機跑 <code>ollama pull nomic-embed-text</code>。11434 通就照 keyword 搜。</p>
         <p id="embedBackfill" class="ollama-setup" hidden></p>
         <p class="row" id="searchBoxChips"></p>
+        <p class="row box-manage" hidden>
+          <input class="box-rename" placeholder="新盒名" autocomplete="off">
+          <button type="button" class="dim box-rename-go">改名</button>
+          <button type="button" class="del box-unbox">刪盒</button>
+          <span class="err box-manage-err" hidden></span>
+        </p>
         <div id="searchList" class="empty">未搜。輸入關鍵字搵筆記同問題。</div>
       </section>
       <section id="pending">
+        <p class="row" id="pendingBoxChips"></p>
+        <p class="row box-manage" hidden>
+          <input class="box-rename" placeholder="新盒名" autocomplete="off">
+          <button type="button" class="dim box-rename-go">改名</button>
+          <button type="button" class="del box-unbox">刪盒</button>
+          <span class="err box-manage-err" hidden></span>
+        </p>
         <div id="pendingList" class="empty">未有待答問題。含糊 dump 先會喺度出現。</div>
       </section>
       <section id="merge">
@@ -701,6 +723,12 @@
       </section>
       <section id="graph">
         <p class="row" id="graphBoxChips"></p>
+        <p class="row box-manage" hidden>
+          <input class="box-rename" placeholder="新盒名" autocomplete="off">
+          <button type="button" class="dim box-rename-go">改名</button>
+          <button type="button" class="del box-unbox">刪盒</button>
+          <span class="err box-manage-err" hidden></span>
+        </p>
         <div id="graphTags"></div>
         <p id="graphEmpty" class="empty" hidden>未有筆記</p>
         <canvas id="graphCanvas" width="800" height="520"></canvas>
@@ -926,9 +954,22 @@ function fillBoxChipBar(el, notes, onPick) {
 }
 
 function applyBoxFilter() {
+  syncBoxManage();
   loadNotes();
   replaySearch();
   if (document.getElementById("graph") && document.getElementById("graph").classList.contains("on")) loadGraph();
+  if (document.getElementById("pending") && document.getElementById("pending").classList.contains("on")) loadPending();
+}
+
+function syncBoxManage() {
+  const named = typeof boxFilter === "string" && boxFilter !== "";
+  document.querySelectorAll(".box-manage").forEach((row) => {
+    row.hidden = !named;
+    const err = row.querySelector(".box-manage-err");
+    if (err) { err.hidden = true; err.textContent = ""; }
+    const inp = row.querySelector(".box-rename");
+    if (inp && named) inp.value = boxFilter;
+  });
 }
 
 function renderBoxChips(notes) {
@@ -936,6 +977,51 @@ function renderBoxChips(notes) {
   fillBoxChipBar(document.getElementById("boxChips"), notes, pick);
   fillBoxChipBar(document.getElementById("searchBoxChips"), notes, pick);
   fillBoxChipBar(document.getElementById("graphBoxChips"), notes, pick);
+  fillBoxChipBar(document.getElementById("pendingBoxChips"), notes, pick);
+  syncBoxManage();
+}
+
+async function renameSelectedBox(to, errEl) {
+  const from = boxFilter;
+  if (typeof from !== "string" || !from) return;
+  if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+  const r = await fetch("/api/boxes/rename", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ from, to }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (errEl) { errEl.hidden = false; errEl.textContent = data.error || "改唔到"; }
+    return;
+  }
+  boxFilter = data.to;
+  const dump = document.getElementById("dumpBox");
+  if (dump && dump.value === from) dump.value = data.to;
+  await refreshBoxes();
+  applyBoxFilter();
+}
+
+async function unboxSelectedBox(errEl) {
+  const box = boxFilter;
+  if (typeof box !== "string" || !box) return;
+  if (!confirm("刪盒「" + box + "」？筆記會變未分類，唔會刪筆記。")) return;
+  if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+  const r = await fetch("/api/boxes/unbox", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ box, confirm: true }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (errEl) { errEl.hidden = false; errEl.textContent = data.error || "刪唔到"; }
+    return;
+  }
+  boxFilter = "";
+  const dump = document.getElementById("dumpBox");
+  if (dump && dump.value === box) dump.value = "";
+  await refreshBoxes();
+  applyBoxFilter();
 }
 
 let lastSearchQ = "";
@@ -1699,10 +1785,21 @@ async function loadPending() {
   const el = document.getElementById("pendingList");
   const r = await fetch("/api/questions");
   const data = await r.json();
-  const qs = data.questions || [];
+  let qs = data.questions || [];
+  const notesRes = await fetch("/api/notes");
+  const notesData = await notesRes.json().catch(() => ({ notes: [] }));
+  const notes = notesData.notes || [];
+  renderBoxChips(notes);
+  const boxOf = {};
+  notes.forEach((n) => { boxOf[n.id] = String(n.box || ""); });
+  if (boxFilter != null) {
+    qs = qs.filter((item) => (boxOf[item.noteId] || "") === boxFilter);
+  }
   if (!qs.length) {
     el.className = "empty";
-    el.textContent = "未有待答問題。含糊 dump 先會喺度出現。";
+    el.textContent = boxFilter != null
+      ? (boxFilter === "" ? "未分類冇待答。" : "呢個盒冇待答。")
+      : "未有待答問題。含糊 dump 先會喺度出現。";
     return;
   }
   el.className = "";
@@ -1712,7 +1809,9 @@ async function loadPending() {
   await Promise.all(need.map((item) => fetch("/api/questions/" + encodeURIComponent(item.id) + "/suggest", { method: "POST" })));
   const r2 = await fetch("/api/questions");
   const d2 = await r2.json();
-  el.replaceChildren(...(d2.questions || []).map((item) => qCard(item, true)));
+  let qs2 = d2.questions || [];
+  if (boxFilter != null) qs2 = qs2.filter((item) => (boxOf[item.noteId] || "") === boxFilter);
+  el.replaceChildren(...qs2.map((item) => qCard(item, true)));
 }
 
 async function loadMerge() {
@@ -2332,6 +2431,18 @@ document.getElementById("backup").addEventListener("click", async () => {
   a.download = "info-inbox-backup.json";
   a.click();
   URL.revokeObjectURL(a.href);
+});
+
+document.querySelectorAll(".box-manage").forEach((row) => {
+  const inp = row.querySelector(".box-rename");
+  const err = row.querySelector(".box-manage-err");
+  const go = row.querySelector(".box-rename-go");
+  const un = row.querySelector(".box-unbox");
+  if (go) go.addEventListener("click", () => renameSelectedBox(inp && inp.value, err));
+  if (inp) inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); renameSelectedBox(inp.value, err); }
+  });
+  if (un) un.addEventListener("click", () => unboxSelectedBox(err));
 });
 
 refreshPendingBadge();

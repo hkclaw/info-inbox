@@ -1065,6 +1065,67 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "POST" && u.pathname === "/api/boxes/rename") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const from = normalizeBox(payload.from);
+    const to = normalizeBox(payload.to);
+    if (!from || !to) {
+      json(res, 400, { error: "要有盒名" });
+      return;
+    }
+    if (from === to) {
+      json(res, 400, { error: "盒名冇變" });
+      return;
+    }
+    const store = load();
+    const hit = store.notes.filter((n) => normalizeBox(n.box) === from);
+    if (!hit.length) {
+      json(res, 404, { error: "搵唔到呢個盒" });
+      return;
+    }
+    hit.forEach((n) => { n.box = to; });
+    save(store);
+    if (loadCurrentBox() === from) saveCurrentBox(to);
+    json(res, 200, { ok: true, from, to, moved: hit.length, boxes: listBoxes(load()) });
+    return;
+  }
+
+  if (method === "POST" && u.pathname === "/api/boxes/unbox") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const box = normalizeBox(payload.box);
+    if (!box) {
+      json(res, 400, { error: "要有盒名" });
+      return;
+    }
+    if (!payload.confirm) {
+      json(res, 400, { error: "要確認" });
+      return;
+    }
+    const store = load();
+    const hit = store.notes.filter((n) => normalizeBox(n.box) === box);
+    if (!hit.length) {
+      json(res, 404, { error: "搵唔到呢個盒" });
+      return;
+    }
+    hit.forEach((n) => { n.box = ""; });
+    save(store);
+    if (loadCurrentBox() === box) saveCurrentBox("");
+    json(res, 200, { ok: true, box, unboxed: hit.length, boxes: listBoxes(load()) });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/models") {
     const listed = await listOllamaModels();
     if (!listed.ok) {
