@@ -345,8 +345,18 @@
 
     #dump .staged .st-status { display: block; font-size: 12px; color: color-mix(in srgb, var(--paper-ink) 62%, transparent); margin-top: 2px; }
     #dump .staged .st-status.failed { color: var(--danger, #c97a6a); }
-    #ollamaLive { margin: 0; font-size: 12.5px; color: color-mix(in srgb, var(--paper-ink) 72%, transparent); flex: 1 1 100%; }
-    #ollamaLive.down { color: var(--warn, #c98f63); }
+    #ollamaLive {
+      margin: 0;
+      font-size: 12.5px;
+      color: var(--text-3);
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #ollamaLive.down { color: #c98f63; }
+    .page-head .head-actions { display: flex; gap: 8px; flex-shrink: 0; }
     .busy { opacity: 0.65; cursor: wait; }
     .card-status { font-size: 13px; color: var(--text-3); margin: 4px 0 0; }
     #dump .staged .staged-meta span {
@@ -566,8 +576,11 @@
     <header class="page-head">
       <h1 id="pageTitle">傾倒</h1>
       <p class="lede" id="pageLede">貼文字或拖檔。分類稍後做。</p>
-      <button type="button" class="backup" id="backup">下載備份</button>
-      <button type="button" class="backup" id="restoreBackup">還原備份</button>
+      <p id="ollamaLive" class="ollama-live down">連唔到 Ollama（127.0.0.1:11434）</p>
+      <div class="head-actions">
+        <button type="button" class="backup" id="backup">下載備份</button>
+        <button type="button" class="backup" id="restoreBackup">還原備份</button>
+      </div>
       <input type="file" id="restoreFile" accept="application/json,.json" hidden>
     </header>
     <main class="canvas">
@@ -594,7 +607,6 @@
               </label>
             </div>
             <button class="go" type="button" id="dumpGo">存入</button>
-            <p id="ollamaLive" class="ollama-live" hidden></p>
             <p id="ollamaSetup" class="ollama-setup" hidden>
               Ollama 未開（127.0.0.1:11434）。本機跑 <code>ollama serve</code>，再 <code>ollama pull <span id="ollamaSetupModel">llama3.2</span></code>。模型下拉會空到 Ollama 上線為止。
             </p>
@@ -1437,12 +1449,26 @@ function stageFiles(fileList) {
   renderStaged();
 }
 
+let dumpToastTimer = null;
+function showDumpToast(text) {
+  const el = document.getElementById("dumpMsg");
+  if (!el) return;
+  el.hidden = false;
+  el.classList.add("ok");
+  el.classList.remove("err");
+  el.textContent = text;
+  if (dumpToastTimer) clearTimeout(dumpToastTimer);
+  dumpToastTimer = setTimeout(() => {
+    el.hidden = true;
+    el.classList.remove("ok");
+    el.classList.add("err");
+  }, 2500);
+}
+
 function showIngestResult(msg, data, fileCount) {
-  msg.hidden = false;
   const question = data.question || (data.results || []).some((x) => x.question);
-  msg.classList.add("ok");
   const n = fileCount != null ? fileCount : (data.results ? data.results.length : 1);
-  msg.textContent = question ? ("已入 " + n + " 條，有待答問題") : ("已入 " + n + " 條");
+  showDumpToast(question ? ("已入 " + n + " 條，有待答問題") : ("已入 " + n + " 條"));
 }
 
 async function ingestPasteOnly(confirmDup) {
@@ -1510,7 +1536,14 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
       msg.textContent = (data.error || "存唔到") + (row.name ? "（" + row.name + "）" : "");
       return { ok: false, results };
     }
-    row.status = "ready";
+    const note = data.note || (data.results && data.results[0] && data.results[0].note);
+    if (note && (note.summary === "未支援抽文字" || (note.text || "").includes("未支援抽文字"))) {
+      row.status = "failed";
+      row.failReason = "未支援抽文字";
+    } else {
+      row.status = "ready";
+      row.failReason = "";
+    }
     renderStaged();
     confirmNext = false;
     pendingFileDupFrom = -1;
@@ -1538,7 +1571,6 @@ async function dumpSave(confirmDup) {
     const out = await ingestPasteOnly(confirmDup);
     if (!out.ok) return;
     showIngestResult(msg, out.data);
-    showTab("notes");
     loadNotes();
     refreshPendingBadge();
     refreshDumpOnboard();
@@ -1570,11 +1602,10 @@ async function dumpSave(confirmDup) {
   }
 
   const fileCount = fileOut.results.length + (pasteData ? 1 : 0);
-  stagedFiles = [];
+  stagedFiles = stagedFiles.filter((x) => x.status === "failed");
   renderStaged();
   if (pasteData) showIngestResult(msg, pasteData, fileCount);
   else showIngestResult(msg, fileOut.results[fileOut.results.length - 1] || { results: fileOut.results }, fileCount);
-  showTab("notes");
   loadNotes();
   refreshPendingBadge();
   refreshDumpOnboard();
@@ -1601,7 +1632,6 @@ document.getElementById("dumpConfirm").addEventListener("click", () => {
       if (!out.ok) return;
       const msg = document.getElementById("dumpMsg");
       showIngestResult(msg, out.data);
-      showTab("notes");
       loadNotes();
       refreshPendingBadge();
       refreshDumpOnboard();
