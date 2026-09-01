@@ -359,6 +359,14 @@
     .page-head .head-actions { display: flex; gap: 8px; flex-shrink: 0; }
     .busy { opacity: 0.65; cursor: wait; }
     .card-status { font-size: 13px; color: var(--text-3); margin: 4px 0 0; }
+    .dump-wait {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--text-3);
+      min-height: 2.6em;
+    }
+    .dump-wait span { display: block; }
+    .dump-wait #dumpWaitTime { color: #c98f63; }
     #dump .staged .staged-meta span {
       opacity: 0.85;
     }
@@ -612,6 +620,10 @@
             </p>
           </div>
         </div>
+        <p id="dumpWait" class="dump-wait" hidden>
+          <span id="dumpWaitTime">分類中 · 已等 0 秒</span>
+          <span id="dumpWaitLine"></span>
+        </p>
         <p id="dumpMsg" class="err" hidden></p>
         <p id="dumpDup" class="err" hidden>呢段同已有 note 一樣。 <button type="button" class="dim" id="dumpConfirm">仍然存入</button></p>
       </section>
@@ -1552,6 +1564,37 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
   return { ok: true, results };
 }
 
+
+const WAIT_LINES = ["慢慢嚟…", "諗緊佢…", "睇緊嗰段…", "對齊字眼…", "等佢答你…"];
+let dumpWaitTimers = [];
+function startDumpWait() {
+  const box = document.getElementById("dumpWait");
+  const timeEl = document.getElementById("dumpWaitTime");
+  const lineEl = document.getElementById("dumpWaitLine");
+  if (!box) return;
+  dumpWaitTimers.forEach(clearInterval);
+  dumpWaitTimers = [];
+  box.hidden = false;
+  const t0 = Date.now();
+  let i = 0;
+  timeEl.textContent = "分類中 · 已等 0 秒";
+  lineEl.textContent = WAIT_LINES[0];
+  dumpWaitTimers.push(setInterval(() => {
+    const secs = Math.floor((Date.now() - t0) / 1000);
+    timeEl.textContent = "分類中 · 已等 " + secs + " 秒";
+  }, 250));
+  dumpWaitTimers.push(setInterval(() => {
+    i = (i + 1) % WAIT_LINES.length;
+    lineEl.textContent = WAIT_LINES[i];
+  }, 2200));
+}
+function stopDumpWait() {
+  dumpWaitTimers.forEach(clearInterval);
+  dumpWaitTimers = [];
+  const box = document.getElementById("dumpWait");
+  if (box) box.hidden = true;
+}
+
 async function dumpSave(confirmDup) {
   const msg = document.getElementById("dumpMsg");
   const dupEl = document.getElementById("dumpDup");
@@ -1562,6 +1605,7 @@ async function dumpSave(confirmDup) {
   go.disabled = true;
   go.textContent = "分類中…";
   go.classList.add("busy");
+  startDumpWait();
   try {
 
   const hasStaged = stagedFiles.length > 0;
@@ -1610,6 +1654,7 @@ async function dumpSave(confirmDup) {
   refreshPendingBadge();
   refreshDumpOnboard();
   } finally {
+    stopDumpWait();
     const goBtn = document.getElementById("dumpGo");
     goBtn.disabled = false;
     goBtn.textContent = "存入";
