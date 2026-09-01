@@ -428,6 +428,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const store = load();
+    if (!payload.confirm) {
+      const dup = store.notes.find((n) => String(n.text || "").trim() === text);
+      if (dup) {
+        json(res, 409, { error: "呢段同已有 note 一樣", duplicateId: dup.id });
+        return;
+      }
+    }
     const note = {
       id: String(Date.now()),
       text,

@@ -110,6 +110,7 @@
     <textarea id="dumpText" placeholder="貼一大段文字"></textarea>
     <div class="row"><button class="go" type="button" id="dumpGo">存入</button></div>
     <p id="dumpMsg" class="err" hidden></p>
+    <p id="dumpDup" class="err" hidden>呢段同已有 note 一樣。 <button type="button" class="dim" id="dumpConfirm">仍然存入</button></p>
   </section>
   <section id="notes">
     <p id="noteFilter" hidden><span id="noteFilterLabel"></span> <button type="button" class="dim" id="noteFilterClear">清篩選／顯示全部</button></p>
@@ -500,16 +501,24 @@ document.getElementById("noteFilterClear").addEventListener("click", () => {
   loadNotes();
 });
 
-document.getElementById("dumpGo").addEventListener("click", async () => {
+async function ingestDump(confirmDup) {
   const msg = document.getElementById("dumpMsg");
+  const dupEl = document.getElementById("dumpDup");
   const text = document.getElementById("dumpText").value;
   msg.hidden = true;
+  dupEl.hidden = true;
+  const body = { text };
+  if (confirmDup) body.confirm = true;
   const r = await fetch("/api/ingest", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
   const data = await r.json().catch(() => ({}));
+  if (r.status === 409) {
+    dupEl.hidden = false;
+    return;
+  }
   if (!r.ok) {
     msg.hidden = false;
     msg.textContent = data.error || "存唔到";
@@ -523,7 +532,10 @@ document.getElementById("dumpGo").addEventListener("click", async () => {
   showTab("notes");
   loadNotes();
   refreshPendingBadge();
-});
+}
+
+document.getElementById("dumpGo").addEventListener("click", () => ingestDump(false));
+document.getElementById("dumpConfirm").addEventListener("click", () => ingestDump(true));
 
 document.getElementById("searchForm").addEventListener("submit", async (e) => {
   e.preventDefault();
