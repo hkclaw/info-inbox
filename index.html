@@ -5,40 +5,92 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>info-inbox</title>
   <style>
-    :root { color-scheme: dark; --bg:#111; --card:#1c1c1e; --line:#333; --text:#f2f2f7; --muted:#8e8e93; --acc:#0a84ff; --warn:#ffd60a; }
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f12;
+      --card: #141a1f;
+      --line: #243036;
+      --text: #e8eef0;
+      --muted: #8b9aa0;
+      --acc: #5eead4;
+      --acc-ink: #042f2e;
+      --warn: #fbbf24;
+      --danger: #fb7185;
+    }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
-    body { margin: 0; font: 15px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); }
-    header { padding: 16px 16px 0; max-width: 720px; margin: 0 auto; }
-    h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
-    .sub { color: var(--muted); margin: 0 0 12px; }
-    nav { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 -4px 16px; padding: 4px; background: var(--card); border-radius: 12px; }
-    nav button { padding: 8px 12px; border: 0; border-radius: 8px; font: inherit; cursor: pointer; background: transparent; color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
-    nav button.on { background: var(--acc); color: #fff; font-weight: 600; }
-    #pendingBadge { display: none; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--acc); color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; }
+    body {
+      margin: 0;
+      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header { padding: 28px 20px 0; max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 28px; font-weight: 650; letter-spacing: -0.03em; margin: 0 0 8px; }
+    .sub { color: var(--muted); margin: 0 0 18px; font-size: 14.5px; }
+    nav {
+      display: flex; gap: 4px; flex-wrap: wrap;
+      margin: 0 0 22px; padding: 5px;
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    }
+    nav button {
+      padding: 9px 14px; border: 0; border-radius: 10px; font: inherit;
+      cursor: pointer; background: transparent; color: var(--text);
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    nav button.on { background: var(--acc); color: var(--acc-ink); font-weight: 650; }
+    #pendingBadge {
+      display: none; min-width: 18px; padding: 0 6px; border-radius: 999px;
+      background: var(--acc); color: var(--acc-ink);
+      font-size: 12px; font-weight: 700; line-height: 18px; text-align: center;
+    }
     #pendingBadge.on { display: inline-block; }
-    nav button.on #pendingBadge { background: #fff; color: var(--acc); }
+    nav button.on #pendingBadge { background: var(--acc-ink); color: var(--acc); }
     .fold { padding: 4px 10px; font-size: 13px; }
-    main { max-width: 720px; margin: 0 auto; padding: 0 16px 80px; }
+    main { max-width: 720px; margin: 0 auto; padding: 0 20px 96px; }
     section { display: none; }
     section.on { display: block; }
-    textarea, input[type=search] { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #000; color: var(--text); font: inherit; }
-    textarea { min-height: 180px; resize: vertical; }
-    .row { margin-top: 8px; display: flex; gap: 8px; }
+    textarea, input[type=search] {
+      width: 100%; padding: 12px 14px; border: 1px solid var(--line);
+      border-radius: 12px; background: #0a0e11; color: var(--text); font: inherit;
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    #dump textarea {
+      min-height: 280px; padding: 18px; font-size: 17px; line-height: 1.6;
+      border-radius: 16px;
+    }
+    #dump .go { width: 100%; padding: 14px 20px; font-size: 16px; border-radius: 12px; }
+    .row { margin-top: 12px; display: flex; gap: 10px; }
     [hidden] { display: none !important; }
-    button.go { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--acc); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-    button.dim { padding: 10px 16px; border: 0; border-radius: 8px; background: #2c2c2e; color: var(--text); font: inherit; cursor: pointer; }
-    .empty { color: var(--muted); padding: 24px 4px; }
-    .err { color: var(--warn); margin: 8px 0; }
-    article { background: var(--card); border-radius: 12px; padding: 12px; margin: 8px 0; }
-    article.hl { outline: 2px solid var(--acc); }
-    article .meta { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-    article pre { white-space: pre-wrap; margin: 0; font: inherit; }
-    .tag { display: inline-block; margin-right: 6px; color: var(--acc); font-size: 12px; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+    button.go {
+      padding: 10px 16px; border: 0; border-radius: 10px;
+      background: var(--acc); color: var(--acc-ink);
+      font: inherit; font-weight: 650; cursor: pointer;
+    }
+    button.dim {
+      padding: 10px 16px; border: 0; border-radius: 10px;
+      background: #1c252b; color: var(--text); font: inherit; cursor: pointer;
+    }
+    .empty { color: var(--muted); padding: 36px 8px; font-size: 15px; }
+    .err { color: var(--warn); margin: 10px 0; }
+    article {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 16px; padding: 18px 18px 16px; margin: 0 0 14px;
+    }
+    article.hl { outline: 2px solid var(--acc); outline-offset: 2px; }
+    article .meta { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+    article pre { white-space: pre-wrap; margin: 0; font: inherit; color: #c5d0d4; }
+    .tag {
+      display: inline-block; margin: 0 8px 6px 0; color: var(--acc);
+      font-size: 13px; background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+    }
     .tag.on { text-decoration: underline; }
-    button.del { padding: 8px 12px; border: 0; border-radius: 8px; background: #2c2c2e; color: #ff453a; font: inherit; cursor: pointer; }
-    #noteFilter { color: var(--muted); margin: 0 0 8px; }
-    .sum { font-weight: 600; margin: 0 0 6px; white-space: pre-wrap; }
+    button.del {
+      padding: 8px 12px; border: 0; border-radius: 10px;
+      background: #1c252b; color: var(--danger); font: inherit; cursor: pointer;
+    }
+    #noteFilter { color: var(--muted); margin: 0 0 12px; }
+    .sum { font-weight: 650; margin: 0 0 10px; white-space: pre-wrap; font-size: 17px; }
   </style>
 </head>
 <body>
