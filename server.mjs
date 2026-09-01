@@ -429,7 +429,7 @@ function searchHay(q, store) {
   const needle = q.trim().toLowerCase();
   if (!needle) return { notes: [], questions: [] };
   const notes = store.notes.filter((n) => {
-    const blob = [n.text, n.summary, ...(n.tags || [])].filter(Boolean).join(" ").toLowerCase();
+    const blob = [n.text, n.summary, n.filename, n.ext, ...(n.tags || [])].filter(Boolean).join(" ").toLowerCase();
     return blob.includes(needle);
   });
   const questions = store.questions.filter((item) => {

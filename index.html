@@ -1592,6 +1592,11 @@ document.getElementById("searchForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const el = document.getElementById("searchList");
   const q = document.getElementById("q").value;
+  if (!String(q).trim()) {
+    el.className = "empty";
+    el.textContent = "未搜。輸入關鍵字搵筆記同問題。";
+    return;
+  }
   const r = await fetch("/api/search?q=" + encodeURIComponent(q));
   const data = await r.json();
   const notes = data.notes || [];
