@@ -2421,13 +2421,30 @@ document.getElementById("importBoxFile").addEventListener("change", async () => 
   const file = input.files && input.files[0];
   input.value = "";
   if (!file) return;
-  if (!confirm("會將呢個備份合併入去，唔會清其他盒。確認匯入？")) return;
+  let raw;
+  try {
+    raw = JSON.parse(await file.text());
+  } catch {
+    alert("備份檔唔啱格式");
+    return;
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Array.isArray(raw.notes) || !Array.isArray(raw.questions)) {
+    alert("備份檔唔啱格式");
+    return;
+  }
+  const fromFile = raw.notes.length ? String(raw.notes[0].box || "").trim() : "";
+  const typed = prompt("匯入去邊個盒？（空＝未分類）", fromFile);
+  if (typed === null) return;
+  const targetBox = String(typed).trim().replace(/\s+/g, " ").slice(0, 40);
+  const label = targetBox || "未分類";
+  if (!confirm("會合併入「" + label + "」，唔會清其他盒。確認匯入？")) return;
+  raw.targetBox = targetBox;
   let res, body;
   try {
     res = await fetch("/api/import-box", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: await file.text(),
+      body: JSON.stringify(raw),
     });
     body = await res.json().catch(() => ({}));
   } catch {

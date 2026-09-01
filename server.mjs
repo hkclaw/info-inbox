@@ -1230,6 +1230,8 @@ const server = http.createServer(async (req, res) => {
     const idMap = {};
     const stamp = Date.now();
     const incoming = [];
+    const override = Object.prototype.hasOwnProperty.call(payload, "targetBox");
+    const destBox = override ? normalizeBox(payload.targetBox) : null;
     payload.notes.forEach((n, i) => {
       const oldId = String(n.id || "");
       const nid = String(stamp) + "-b" + i + "-" + Math.random().toString(36).slice(2, 7);
@@ -1237,7 +1239,7 @@ const server = http.createServer(async (req, res) => {
       incoming.push({
         ...n,
         id: nid,
-        box: normalizeBox(n.box),
+        box: override ? destBox : normalizeBox(n.box),
       });
     });
     const incomingQs = [];
