@@ -235,7 +235,8 @@ function qCard(item, canAnswer) {
         err.textContent = data.error || "答唔到";
         return;
       }
-      loadPending();
+      await loadPending();
+      if (data.note && data.note.id) await showSourceNote(data.note.id);
     });
     row.appendChild(btn);
     art.appendChild(ta);

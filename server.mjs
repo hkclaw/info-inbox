@@ -290,8 +290,16 @@ const server = http.createServer(async (req, res) => {
     row.answer = answer;
     row.status = "answered";
     row.answeredAt = new Date().toISOString();
+    const result = await classify(src.text || "");
+    if (result.ok) {
+      src.tags = result.tags;
+      src.summary = result.summary;
+      src.classifyError = null;
+    } else {
+      src.classifyError = CLASSIFY_FAIL;
+    }
     save(store);
-    json(res, 200, { ok: true, question: row, note: src });
+    json(res, 200, { ok: true, question: row, note: src, classified: !!result.ok });
     return;
   }
 
