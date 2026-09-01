@@ -474,6 +474,106 @@ function extractOdt(data, filename) {
   }
 }
 
+
+function decodeRfc2047(s) {
+  return String(s || "").replace(/=\?([^?]+)\?([bBqQ])\?([^?]*)\?=/g, (_, cs, enc, body) => {
+    try {
+      if (/b/i.test(enc)) return Buffer.from(body, "base64").toString("utf8");
+      const raw = body.replace(/_/g, " ").replace(/=([0-9A-Fa-f]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+      return Buffer.from(raw, "latin1").toString("utf8");
+    } catch {
+      return body;
+    }
+  });
+}
+
+function decodeTransfer(body, encoding) {
+  const enc = String(encoding || "").toLowerCase();
+  const raw = String(body || "");
+  try {
+    if (enc.includes("base64")) return Buffer.from(raw.replace(/\s+/g, ""), "base64").toString("utf8");
+    if (enc.includes("quoted-printable")) {
+      return raw.replace(/=\r?\n/g, "").replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    }
+  } catch { /* keep raw */ }
+  return raw;
+}
+
+function stripHtmlish(s) {
+  return String(s || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function emlHeader(raw, name) {
+  const re = new RegExp("^" + name + ":\\s*([\\s\\S]*?)(?=\\n\\S|\\n\\n|$)", "im");
+  const m = String(raw || "").replace(/\r\n/g, "\n").match(re);
+  if (!m) return "";
+  return decodeRfc2047(m[1].replace(/\n[ \t]+/g, " ").trim());
+}
+
+function extractEml(data, filename) {
+  try {
+    const raw = Buffer.from(data).toString("latin1").replace(/\r\n/g, "\n");
+    if (!raw.trim()) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    const split = raw.indexOf("\n\n");
+    const head = split >= 0 ? raw.slice(0, split) : raw;
+    let body = split >= 0 ? raw.slice(split + 2) : "";
+    const subject = emlHeader(head, "Subject");
+    const from = emlHeader(head, "From");
+    const date = emlHeader(head, "Date");
+    const ctype = (emlHeader(head, "Content-Type") || "").toLowerCase();
+    const cte = emlHeader(head, "Content-Transfer-Encoding");
+    const bm = ctype.match(/boundary="?([^";\s]+)"?/i);
+    let plain = "";
+    let html = "";
+    if (bm) {
+      const bound = "--" + bm[1];
+      const parts = body.split(bound);
+      for (const part of parts) {
+        const ps = part.indexOf("\n\n");
+        if (ps < 0) continue;
+        const ph = part.slice(0, ps);
+        const pb = part.slice(ps + 2).replace(/\n--\s*$/, "");
+        const pct = (emlHeader(ph, "Content-Type") || "").toLowerCase();
+        const pe = emlHeader(ph, "Content-Transfer-Encoding");
+        const decoded = decodeTransfer(pb, pe);
+        if (pct.includes("text/plain") && !plain) plain = decoded;
+        else if (pct.includes("text/html") && !html) html = decoded;
+      }
+    } else {
+      const decoded = decodeTransfer(body, cte);
+      if (ctype.includes("text/html")) html = decoded;
+      else plain = decoded;
+    }
+    const bodyText = (plain || "").trim() || stripHtmlish(html);
+    const lines = [];
+    if (subject) lines.push("Subject: " + subject);
+    if (from) lines.push("From: " + from);
+    if (date) lines.push("Date: " + date);
+    if (bodyText) lines.push("", bodyText);
+    const text = lines.join("\n").trim();
+    if (!text) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    return { text, supported: true };
+  } catch {
+    return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+  }
+}
+
 async function extractFileText(filename, data) {
   const ext = extOf(filename);
   if (TEXT_EXTS.has(ext)) {
@@ -509,6 +609,9 @@ async function extractFileText(filename, data) {
   }
   if (ext === ".odt") {
     return extractOdt(data, filename);
+  }
+  if (ext === ".eml") {
+    return extractEml(data, filename);
   }
   if (ext === ".xlsx" || ext === ".xls") {
     try {
