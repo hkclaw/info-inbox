@@ -635,8 +635,9 @@ async function refreshDumpOnboard() {
   let empty = true;
   try {
     const r = await fetch("/api/notes");
-    const notes = await r.json().catch(() => []);
-    empty = !Array.isArray(notes) || notes.length === 0;
+    const data = await r.json().catch(() => ({}));
+    const notes = Array.isArray(data) ? data : (Array.isArray(data.notes) ? data.notes : []);
+    empty = notes.length === 0;
   } catch {
     empty = true;
   }
