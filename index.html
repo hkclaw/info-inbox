@@ -514,6 +514,13 @@
       background: var(--acc-soft);
       color: var(--acc);
     }
+    .suggest {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 4px;
+    }
+    .suggest .tag { margin: 0; }
     article .row { margin-top: 12px; }
     #searchForm { margin-bottom: 8px; }
     #searchForm .row { margin-top: 14px; }
@@ -1049,24 +1056,55 @@ function qCard(item, canAnswer) {
     art.appendChild(a);
   }
   if (canAnswer && (item.status || "open") === "open") {
+    const sug = Array.isArray(item.suggestions) ? item.suggestions.map((x) => String(x).trim()).filter(Boolean) : [];
+    if (sug.length) {
+      const chips = document.createElement("div");
+      chips.className = "suggest";
+      sug.forEach((s) => {
+        const c = document.createElement("button");
+        c.type = "button";
+        c.className = "tag";
+        c.textContent = s;
+        c.addEventListener("click", () => sendAnswer(s));
+        chips.appendChild(c);
+      });
+      art.appendChild(chips);
+    } else if (item.suggestError) {
+      const e = document.createElement("p");
+      e.className = "err";
+      e.style.margin = "6px 0 0";
+      e.textContent = item.suggestError;
+      art.appendChild(e);
+    }
     const ta = document.createElement("textarea");
     ta.placeholder = "答呢條";
     ta.style.minHeight = "72px";
+    ta.hidden = true;
     const row = document.createElement("div");
     row.className = "row";
+    const selfBtn = document.createElement("button");
+    selfBtn.type = "button";
+    selfBtn.className = "dim";
+    selfBtn.textContent = "自己填";
     const btn = document.createElement("button");
     btn.className = "go";
     btn.type = "button";
     btn.textContent = "送出";
+    btn.hidden = true;
     const err = document.createElement("p");
     err.className = "err";
     err.hidden = true;
-    btn.addEventListener("click", async () => {
+    selfBtn.addEventListener("click", () => {
+      const open = ta.hidden;
+      ta.hidden = !open;
+      btn.hidden = !open;
+    });
+    async function sendAnswer(answer) {
       err.hidden = true;
       const r = await fetch("/api/questions/" + encodeURIComponent(item.id) + "/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ answer: ta.value }),
+        body: JSON.stringify({ answer }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -1076,7 +1114,9 @@ function qCard(item, canAnswer) {
       }
       await loadPending();
       if (data.note && data.note.id) await showSourceNote(data.note.id);
-    });
+    }
+    btn.addEventListener("click", () => sendAnswer(ta.value));
+    row.appendChild(selfBtn);
     row.appendChild(btn);
     art.appendChild(ta);
     art.appendChild(row);
@@ -1467,6 +1507,12 @@ async function loadPending() {
   }
   el.className = "";
   el.replaceChildren(...qs.map((item) => qCard(item, true)));
+  const need = qs.filter((item) => (item.status || "open") === "open" && !(item.suggestions || []).length && !item.suggestError);
+  if (!need.length) return;
+  await Promise.all(need.map((item) => fetch("/api/questions/" + encodeURIComponent(item.id) + "/suggest", { method: "POST" })));
+  const r2 = await fetch("/api/questions");
+  const d2 = await r2.json();
+  el.replaceChildren(...(d2.questions || []).map((item) => qCard(item, true)));
 }
 
 async function loadMerge() {

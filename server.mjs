@@ -677,7 +677,12 @@ async function ingestText(text, opts = {}) {
         answer: null,
         noteId: row.id,
         createdAt: new Date().toISOString(),
+        suggestions: [],
+        suggestError: null,
       };
+      const sugOut = await suggestAnswers(queued.text, row.text || trimmed);
+      queued.suggestions = sugOut.suggestions || [];
+      queued.suggestError = sugOut.ok ? null : (sugOut.error || CLASSIFY_FAIL);
       next.questions.unshift(queued);
     }
   } else {
@@ -705,6 +710,60 @@ function sendFile(res, file) {
   });
 }
 
+
+
+async function suggestAnswers(question, noteText) {
+  const listed = await listOllamaModels();
+  if (!listed.ok) return { ok: false, error: CLASSIFY_FAIL, suggestions: [] };
+  const model = pickDefaultModel(listed.models);
+  if (!model) return { ok: false, error: CLASSIFY_NO_TEXT, suggestions: [] };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), OLLAMA_MS);
+  try {
+    const r = await fetch(OLLAMA + "/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        model,
+        stream: false,
+        format: "json",
+        messages: [
+          {
+            role: "system",
+            content:
+              'Suggest short answers to a clarifying question about a personal note. JSON only: {"suggestions":["..."]}. Two to four short options. Same language as the question. Do not invent facts that are not in the note.',
+          },
+          {
+            role: "user",
+            content: ("Question: " + String(question || "") + "\n\nNote:\n" + String(noteText || "")).slice(0, CLASSIFY_CHARS),
+          },
+        ],
+        options: { num_predict: CLASSIFY_NUM_PREDICT },
+      }),
+    });
+    if (!r.ok) return { ok: false, error: classifyHttpError(r.status), suggestions: [] };
+    const data = await r.json();
+    const raw = data && data.message && data.message.content;
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      const m = String(raw || "").match(/\{[\s\S]*\}/);
+      if (!m) return { ok: false, error: "模型回錯誤", suggestions: [] };
+      try { parsed = JSON.parse(m[0]); } catch { return { ok: false, error: "模型回錯誤", suggestions: [] }; }
+    }
+    const suggestions = Array.isArray(parsed.suggestions)
+      ? parsed.suggestions.map((x) => String(x).trim()).filter(Boolean).slice(0, 4)
+      : [];
+    if (suggestions.length < 2) return { ok: false, error: "模型回錯誤", suggestions: [] };
+    return { ok: true, suggestions, error: null };
+  } catch (err) {
+    return { ok: false, error: classifyCatchError(err), suggestions: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function classify(text) {
   const listed = await listOllamaModels();
@@ -1202,6 +1261,32 @@ const server = http.createServer(async (req, res) => {
     }
     backfillEmbeddings().catch(() => {});
     json(res, 200, { ok: true, started: true, running: true, missing: st.missing || 0 });
+    return;
+  }
+
+  const sugPath = /^\/api\/questions\/([^/]+)\/suggest$/.exec(u.pathname);
+  if (method === "POST" && sugPath) {
+    const id = decodeURIComponent(sugPath[1]);
+    const store = load();
+    const row = store.questions.find((q) => q.id === id);
+    if (!row) {
+      json(res, 404, { error: "搵唔到呢條問題" });
+      return;
+    }
+    if ((row.status || "open") !== "open") {
+      json(res, 409, { error: "呢條已答過" });
+      return;
+    }
+    if (Array.isArray(row.suggestions) && row.suggestions.length >= 2) {
+      json(res, 200, { ok: true, question: row });
+      return;
+    }
+    const note = store.notes.find((n) => n.id === row.noteId);
+    const sugOut = await suggestAnswers(row.text, note && note.text);
+    row.suggestions = sugOut.suggestions || [];
+    row.suggestError = sugOut.ok ? null : (sugOut.error || CLASSIFY_FAIL);
+    save(store);
+    json(res, 200, { ok: !!sugOut.ok, question: row, error: row.suggestError });
     return;
   }
 

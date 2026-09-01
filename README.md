@@ -20,7 +20,7 @@ Empty Dump shows three short steps (paste/drop → local Ollama → Pending when
 - When Ollama is down, Dump shows setup (`ollama serve` / `ollama pull …`) and the model picker stays empty until tags load.
 - Notes list. Click a tag to filter; 「清篩選／顯示全部」 clears. 編輯 PATCHes text only. 刪除 is DELETE /api/notes/:id. Empty tags or classifyError show 「重新分類」.
 - Search finds notes and questions (text / summary / tags / filename / ext). With local Ollama `nomic-embed-text`, Dump stores a vector per note and Search mixes keyword with cosine; notes ingested before nomic was pulled get a background backfill (`POST /api/embed/backfill`, also on server start) that does not block Dump. Search shows 「有 N 條未有向量」／「補緊向量」 while that runs. If the embedder is missing it stays keyword-only and Search shows `ollama pull nomic-embed-text` (not 連唔到 while 11434 is up).
-- Pending: open items have a reply box and 「睇來源筆記」. Answering appends 「（澄清）答：…」 to the source note and reclassifies it. Answered cards stay with 「答：…」.
+- Pending: open items have 2-4 short answer chips from the local text model, plus 「自己填」 for the reply box, and 「睇來源筆記」. Clicking a chip POSTs /api/questions/:id/answer the same as typing. Suggestions stay on the question across reload. If Ollama is down, chips stay empty (no invented options), the existing error line shows, and you can still fill it yourself. Answering appends 「（澄清）答：…」 to the source note and reclassifies it. Answered cards stay with 「答：…」.
 - Merge tab: overlapping pairs, accept or dismiss. Does not auto-rewrite the inbox.
 - Tabs: Dump / Notes / Search / Pending / Merge / 圖譜. Localhost 127.0.0.1:3741 only.
 - Graph tab: notes as hollow copper nodes; tags are smaller hollow hubs. Notes link to tags (not note↔note from one shared tag). Merge and pending stay note↔note (pending dashed). Labels cap at 16 characters. Click a note to jump to Notes. Pan/zoom; tag chips filter. Empty inbox shows 「未有筆記」. Local canvas, no cloud.
@@ -54,6 +54,6 @@ Click 「下載備份」 on the page (GET /api/export). One JSON file with notes
 
 ## Data
 
-JSON file under data/ (gitignored). Notes: id, text, createdAt, ingestedAt, source (paste | file), filename/ext/bytes/fileModifiedAt (file only), tags, summary, classifyError, clarifications. Questions: id, text, status (open | answered), answer, noteId, createdAt. dismissedMerges stores dismissed pair keys.
+JSON file under data/ (gitignored). Notes: id, text, createdAt, ingestedAt, source (paste | file), filename/ext/bytes/fileModifiedAt (file only), tags, summary, classifyError, clarifications. Questions: id, text, status (open | answered), answer, noteId, createdAt, suggestions, suggestError. dismissedMerges stores dismissed pair keys.
 
 Merge later means overlapping notes, not rewriting the whole inbox.
