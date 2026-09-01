@@ -44,7 +44,7 @@
 <body>
 <header>
   <h1>info-inbox</h1>
-  <p class="sub">本機 inbox。資料只存呢部機。分類用本機 Ollama llama3.2。</p>
+  <p class="sub">本機 inbox。資料只存呢部機。分類用本機 Ollama llama3.2。 <button type="button" class="dim" id="backup">下載備份</button></p>
   <nav>
     <button type="button" data-tab="dump" class="on">Dump</button>
     <button type="button" data-tab="notes">Notes</button>
@@ -491,6 +491,17 @@ document.getElementById("searchForm").addEventListener("submit", async (e) => {
   notes.forEach((n) => nodes.push(noteCard(n)));
   questions.forEach((item) => nodes.push(qCard(item)));
   el.replaceChildren(...nodes);
+});
+
+document.getElementById("backup").addEventListener("click", async () => {
+  const r = await fetch("/api/export");
+  if (!r.ok) return;
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "info-inbox-backup.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
 
 refreshPendingBadge();

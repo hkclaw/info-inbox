@@ -197,6 +197,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "GET" && u.pathname === "/api/export") {
+    const store = load();
+    const body = JSON.stringify({
+      notes: store.notes,
+      questions: store.questions,
+      dismissedMerges: store.dismissedMerges,
+      exportedAt: new Date().toISOString(),
+    }, null, 2);
+    res.writeHead(200, {
+      "content-type": "application/json; charset=utf-8",
+      "content-disposition": 'attachment; filename="info-inbox-backup.json"',
+      "cache-control": "no-store",
+    });
+    res.end(body);
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/notes") {
     json(res, 200, { notes: load().notes });
     return;

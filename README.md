@@ -44,6 +44,10 @@ Each card has 編輯 (textarea, 儲存／取消) to PATCH /api/notes/:id with { 
 
 Notes with a classifyError or no tags show 「重新分類」. That POSTs /api/notes/:id/reclassify to the same local Ollama (llama3.2). Success writes tags and summary; if Ollama is down the text stays, tags are not invented, and 「連唔到 Ollama（127.0.0.1:11434）」 is shown.
 
+## Backup
+
+Click 「下載備份」 on the page (GET /api/export). One JSON file with notes, pending questions, and merge dismissals. Stays on this machine. Import is not in this slice.
+
 ## Data
 
 JSON file under data/ (gitignored). Notes: id, text, createdAt, tags, summary, classifyError, clarifications. Questions: id, text, status (open | answered), answer, noteId, createdAt. dismissedMerges stores dismissed pair keys.
