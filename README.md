@@ -12,6 +12,8 @@ Need Node 18+.
 
 Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1 only. Do not publish this to the public internet. The UI shell is a notes-app layout (sidebar + editor), not a form dashboard.
 
+Empty Dump shows three short steps (paste/drop → local Ollama → Pending when vague) and says data stays on this machine with no cloud; when Ollama is up it shows ready plus the selected model, when down the existing serve/pull hints stay. The block hides once any note exists and never blocks paste, multi-file drop, or 存入.
+
 ## V1 (today)
 
 - Dump a block of text. Exact-duplicate text (trim, not fuzzy) warns 「呢段同已有 note 一樣」 and needs 仍然存入. Dump also accepts files (txt/md/csv/json/html/log/pdf/xlsx/xls locally; other types still become a note with 「未支援抽文字」). Ollama llama3.2 at http://127.0.0.1:11434 writes tags + a one-line summary; if it is down the note stays, tags stay empty, and the page shows 「連唔到 Ollama（127.0.0.1:11434）」. No invented tags.

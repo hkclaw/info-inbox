@@ -287,6 +287,32 @@
       color: var(--paper-ink);
     }
     #dump .go { min-width: 88px; }
+    #dump .dump-onboard {
+      margin: 0 0 14px;
+      padding: 0;
+      max-width: 36em;
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--text-2);
+    }
+    #dump .dump-onboard ol {
+      margin: 0 0 8px;
+      padding-left: 1.25em;
+    }
+    #dump .dump-onboard li { margin: 0.15em 0; }
+    #dump .dump-onboard .local-note {
+      margin: 0 0 6px;
+      color: var(--text-3);
+      font-size: 12.5px;
+    }
+    #dump .dump-onboard .ollama-line {
+      margin: 0;
+      font-size: 12.5px;
+      color: var(--text-3);
+    }
+    #dump .dump-onboard .ollama-line[data-ready="1"] {
+      color: color-mix(in srgb, var(--acc) 70%, var(--text-2));
+    }
     #dumpFile { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
     #dump .staged {
       list-style: none;
@@ -515,6 +541,15 @@
     </header>
     <main class="canvas">
       <section id="dump" class="on">
+        <div id="dumpOnboard" class="dump-onboard" hidden>
+          <ol>
+            <li>貼亂筆記／拖檔</li>
+            <li>本機 Ollama 分類</li>
+            <li>含糊就去「待答」澄清</li>
+          </ol>
+          <p class="local-note">資料只留喺呢部機，無 cloud。</p>
+          <p id="dumpOnboardOllama" class="ollama-line" hidden></p>
+        </div>
         <div class="paper" id="dumpPaper">
           <input type="file" id="dumpFile" multiple>
           <textarea id="dumpText" placeholder="貼一大段文字，或拖檔入嚟"></textarea>
@@ -566,6 +601,21 @@ const pageCopy = {
   merge: { title: "合併", lede: "重疊筆記建議。接受或唔合。" },
 };
 
+function setDumpOnboardOllama(ready, modelName) {
+  const line = document.getElementById("dumpOnboardOllama");
+  if (!line) return;
+  if (ready) {
+    const name = String(modelName || "").trim() || "llama3.2";
+    line.hidden = false;
+    line.dataset.ready = "1";
+    line.textContent = "Ollama ready · " + name;
+  } else {
+    line.hidden = true;
+    line.dataset.ready = "0";
+    line.textContent = "";
+  }
+}
+
 function setOllamaSetupHint(show, defaultModel) {
   const hint = document.getElementById("ollamaSetup");
   const modelEl = document.getElementById("ollamaSetupModel");
@@ -575,6 +625,20 @@ function setOllamaSetupHint(show, defaultModel) {
     modelEl.textContent = name;
   }
   hint.hidden = !show;
+}
+
+async function refreshDumpOnboard() {
+  const box = document.getElementById("dumpOnboard");
+  if (!box) return;
+  let empty = true;
+  try {
+    const r = await fetch("/api/notes");
+    const notes = await r.json().catch(() => []);
+    empty = !Array.isArray(notes) || notes.length === 0;
+  } catch {
+    empty = true;
+  }
+  box.hidden = !empty;
 }
 
 async function loadOllamaModels() {
@@ -595,12 +659,14 @@ async function loadOllamaModels() {
     sel.innerHTML = "";
     sel.disabled = true;
     setOllamaSetupHint(true, defaultModel);
+    setDumpOnboardOllama(false);
     return;
   }
   setOllamaSetupHint(false, defaultModel);
   if (!models.length) {
     sel.innerHTML = "";
     sel.disabled = true;
+    setDumpOnboardOllama(true, defaultModel);
     return;
   }
   for (const name of models) {
@@ -612,12 +678,14 @@ async function loadOllamaModels() {
   const selected = data.selected && models.includes(data.selected) ? data.selected : models[0];
   sel.value = selected;
   sel.disabled = false;
+  setDumpOnboardOllama(true, selected);
 }
 
 document.getElementById("ollamaModel").addEventListener("change", async () => {
   const sel = document.getElementById("ollamaModel");
   const model = sel.value;
   if (!model) return;
+  setDumpOnboardOllama(true, model);
   try {
     const r = await fetch("/api/model", {
       method: "PUT",
@@ -638,6 +706,7 @@ function showTab(id) {
 }
 tabs.forEach((b) => b.addEventListener("click", () => {
   showTab(b.dataset.tab);
+  if (b.dataset.tab === "dump") refreshDumpOnboard();
   if (b.dataset.tab === "notes") loadNotes();
   if (b.dataset.tab === "pending") loadPending();
   if (b.dataset.tab === "merge") loadMerge();
@@ -829,6 +898,7 @@ function noteCard(n, withDelete) {
         return;
       }
       loadNotes();
+      refreshDumpOnboard();
     });
     row.appendChild(del);
     art.appendChild(row);
@@ -1181,6 +1251,7 @@ async function dumpSave(confirmDup) {
     showTab("notes");
     loadNotes();
     refreshPendingBadge();
+    refreshDumpOnboard();
     return;
   }
 
@@ -1196,11 +1267,13 @@ async function dumpSave(confirmDup) {
       // leave staged as-is until paste confirmed? Files already saved — clear staged now
       stagedFiles = [];
       renderStaged();
+      refreshDumpOnboard();
       return;
     }
     if (!pasteOut.ok) {
       stagedFiles = [];
       renderStaged();
+      refreshDumpOnboard();
       return;
     }
     pasteData = pasteOut.data;
@@ -1214,6 +1287,7 @@ async function dumpSave(confirmDup) {
   showTab("notes");
   loadNotes();
   refreshPendingBadge();
+  refreshDumpOnboard();
 }
 
 document.getElementById("dumpGo").addEventListener("click", () => {
@@ -1234,6 +1308,7 @@ document.getElementById("dumpConfirm").addEventListener("click", () => {
       showTab("notes");
       loadNotes();
       refreshPendingBadge();
+      refreshDumpOnboard();
     });
     return;
   }
@@ -1307,6 +1382,7 @@ document.getElementById("backup").addEventListener("click", async () => {
 
 refreshPendingBadge();
 loadOllamaModels();
+refreshDumpOnboard();
 </script>
 </body>
 </html>
