@@ -841,7 +841,7 @@ function qCard(item, canAnswer) {
   const art = document.createElement("article");
   const meta = document.createElement("div");
   meta.className = "meta";
-  meta.textContent = (item.status || "open") + " · " + (item.createdAt || "");
+  meta.textContent = (item.status || "open") + " · " + formatHkDate(item.createdAt);
   const pre = document.createElement("pre");
   pre.textContent = item.text || "";
   art.appendChild(meta);
