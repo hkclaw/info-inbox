@@ -22,6 +22,7 @@
     textarea { min-height: 180px; resize: vertical; }
     .row { margin-top: 8px; display: flex; gap: 8px; }
     button.go { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--acc); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    button.dim { padding: 10px 16px; border: 0; border-radius: 8px; background: #2c2c2e; color: var(--text); font: inherit; cursor: pointer; }
     .empty { color: var(--muted); padding: 24px 4px; }
     .err { color: var(--warn); margin: 8px 0; }
     article { background: var(--card); border-radius: 12px; padding: 12px; margin: 8px 0; }
@@ -40,6 +41,7 @@
     <button type="button" data-tab="notes">Notes</button>
     <button type="button" data-tab="search">Search</button>
     <button type="button" data-tab="pending">Pending</button>
+    <button type="button" data-tab="merge">Merge</button>
   </nav>
 </header>
 <main>
@@ -61,6 +63,9 @@
   <section id="pending">
     <div id="pendingList" class="empty">未有待答問題。</div>
   </section>
+  <section id="merge">
+    <div id="mergeList" class="empty">未有合併建議。</div>
+  </section>
 </main>
 <script>
 const tabs = [...document.querySelectorAll("nav button")];
@@ -73,6 +78,7 @@ tabs.forEach((b) => b.addEventListener("click", () => {
   showTab(b.dataset.tab);
   if (b.dataset.tab === "notes") loadNotes();
   if (b.dataset.tab === "pending") loadPending();
+  if (b.dataset.tab === "merge") loadMerge();
 }));
 
 function noteCard(n) {
@@ -177,6 +183,70 @@ async function loadPending() {
   }
   el.className = "";
   el.replaceChildren(...qs.map((item) => qCard(item, true)));
+}
+
+async function loadMerge() {
+  const el = document.getElementById("mergeList");
+  const r = await fetch("/api/merge-suggestions");
+  const data = await r.json();
+  const rows = data.suggestions || [];
+  if (!rows.length) {
+    el.className = "empty";
+    el.textContent = "未有合併建議。";
+    return;
+  }
+  el.className = "";
+  const notesRes = await fetch("/api/notes");
+  const notes = ((await notesRes.json()).notes || []);
+  const byId = Object.fromEntries(notes.map((n) => [n.id, n]));
+  el.replaceChildren(...rows.map((pair) => {
+    const art = document.createElement("article");
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = pair.reason || "重疊";
+    art.appendChild(meta);
+    [pair.a, pair.b].forEach((id) => {
+      const n = byId[id] || { id, text: id };
+      const pre = document.createElement("pre");
+      pre.textContent = (n.summary || n.text || id).slice(0, 280);
+      art.appendChild(pre);
+    });
+    const row = document.createElement("div");
+    row.className = "row";
+    const ok = document.createElement("button");
+    ok.className = "go";
+    ok.type = "button";
+    ok.textContent = "合併";
+    const no = document.createElement("button");
+    no.className = "dim";
+    no.type = "button";
+    no.textContent = "唔合";
+    const err = document.createElement("p");
+    err.className = "err";
+    err.hidden = true;
+    async function act(url) {
+      err.hidden = true;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ a: pair.a, b: pair.b }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        err.hidden = false;
+        err.textContent = body.error || "做唔到";
+        return;
+      }
+      loadMerge();
+    }
+    ok.addEventListener("click", () => act("/api/merge-suggestions/accept"));
+    no.addEventListener("click", () => act("/api/merge-suggestions/dismiss"));
+    row.appendChild(ok);
+    row.appendChild(no);
+    art.appendChild(row);
+    art.appendChild(err);
+    return art;
+  }));
 }
 
 document.getElementById("dumpGo").addEventListener("click", async () => {

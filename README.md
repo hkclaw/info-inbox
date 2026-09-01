@@ -17,6 +17,7 @@ Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1
 - Dump a block of text
 - See notes (empty until you dump)
 - Search notes and questions
+- Merge tab: overlapping pairs, accept or dismiss (does not auto-rewrite the inbox)
 - Pending questions queue (empty until the model asks). Open items have a reply box; answered stay in the list with 「答：…」
 - POST /api/ingest stores the dump, then classifies with Ollama at http://127.0.0.1:11434 (llama3.2). Success writes tags and a one-line summary and clears classifyError. If Ollama is down, the note stays, tags stay empty, and the page shows 「連唔到 Ollama（127.0.0.1:11434）」. No invented tags.
 
@@ -28,6 +29,12 @@ Needs a local Ollama. Default model llama3.2 at http://127.0.0.1:11434.
     ollama pull llama3.2
 
 Dump still saves if the model is offline. The page then shows 「連唔到 Ollama（127.0.0.1:11434）」 and does not invent tags. Vague dumps may enqueue an open question. Answer on the Pending tab (textarea + 送出) or POST /api/questions/:id/answer with { "answer": "..." }. That stores the answer, sets status to answered, and keeps the card. 404 and already-answered return a clear error.
+
+## Merge
+
+Overlapping notes (shared tags or similar text) show as suggestions. Nothing is rewritten until you accept.
+
+GET /api/merge-suggestions lists pairs (note ids + a short reason). Accept merges bodies, unions tags, keeps one summary (rewrites with Ollama only if it is up), and deletes the other id. Dismiss leaves both notes. Stored in data/. Localhost only, no cloud.
 
 ## Data
 

@@ -14,15 +14,75 @@ const OLLAMA_MS = Number(process.env.OLLAMA_MS || 20000);
 const CLASSIFY_FAIL = "連唔到 Ollama（127.0.0.1:11434）";
 
 function emptyStore() {
-  return { notes: [], questions: [] };
+  return { notes: [], questions: [], dismissedMerges: [] };
 }
 
 function load() {
   try {
-    return JSON.parse(fs.readFileSync(storeFile, "utf8"));
+    const s = JSON.parse(fs.readFileSync(storeFile, "utf8"));
+    if (!Array.isArray(s.notes)) s.notes = [];
+    if (!Array.isArray(s.questions)) s.questions = [];
+    if (!Array.isArray(s.dismissedMerges)) s.dismissedMerges = [];
+    return s;
   } catch {
     return emptyStore();
   }
+}
+
+function pairKey(a, b) {
+  return [String(a), String(b)].sort().join("|");
+}
+
+function tokens(s) {
+  const t = String(s || "").toLowerCase();
+  const out = new Set();
+  for (const w of t.match(/[a-z0-9]{2,}/g) || []) out.add(w);
+  const cjk = t.match(/[\u4e00-\u9fff]+/g) || [];
+  for (const run of cjk) {
+    if (run.length === 1) out.add(run);
+    for (let i = 0; i < run.length - 1; i++) out.add(run.slice(i, i + 2));
+  }
+  return out;
+}
+
+function jaccard(a, b) {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+
+function suggestMerges(store) {
+  const dismissed = new Set(store.dismissedMerges);
+  const notes = store.notes;
+  const bag = notes.map((n) => tokens((n.text || "") + " " + (n.summary || "")));
+  const pairs = [];
+  for (let i = 0; i < notes.length; i++) {
+    for (let j = i + 1; j < notes.length; j++) {
+      const a = notes[i];
+      const b = notes[j];
+      const key = pairKey(a.id, b.id);
+      if (dismissed.has(key)) continue;
+      const ta = new Set((a.tags || []).map((x) => String(x).toLowerCase()));
+      const tb = new Set((b.tags || []).map((x) => String(x).toLowerCase()));
+      const shared = [...ta].filter((x) => tb.has(x));
+      const jac = jaccard(bag[i], bag[j]);
+      let inter = 0;
+      for (const x of bag[i]) if (bag[j].has(x)) inter++;
+      let reason = "";
+      if (shared.length) reason = "相同 tag：" + shared.slice(0, 4).join("、");
+      else if (jac >= 0.22 || inter >= 4) reason = "文字重疊";
+      if (!reason) continue;
+      pairs.push({ a: a.id, b: b.id, reason });
+    }
+  }
+  return pairs;
+}
+
+async function maybeRewriteSummary(text) {
+  const result = await classify(text);
+  if (result.ok && result.summary) return result.summary;
+  return null;
 }
 
 function save(store) {
@@ -182,6 +242,74 @@ const server = http.createServer(async (req, res) => {
     row.answeredAt = new Date().toISOString();
     save(store);
     json(res, 200, { ok: true, question: row });
+    return;
+  }
+
+  if (method === "GET" && u.pathname === "/api/merge-suggestions") {
+    const store = load();
+    json(res, 200, { suggestions: suggestMerges(store) });
+    return;
+  }
+
+  if (method === "POST" && u.pathname === "/api/merge-suggestions/dismiss") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const key = pairKey(payload.a, payload.b);
+    if (!payload.a || !payload.b) {
+      json(res, 400, { error: "要有一對筆記" });
+      return;
+    }
+    const store = load();
+    if (!store.dismissedMerges.includes(key)) store.dismissedMerges.push(key);
+    save(store);
+    json(res, 200, { ok: true, dismissed: key });
+    return;
+  }
+
+  if (method === "POST" && u.pathname === "/api/merge-suggestions/accept") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const idA = String(payload.a || "");
+    const idB = String(payload.b || "");
+    if (!idA || !idB || idA === idB) {
+      json(res, 400, { error: "要有一對筆記" });
+      return;
+    }
+    const store = load();
+    const a = store.notes.find((n) => n.id === idA);
+    const b = store.notes.find((n) => n.id === idB);
+    if (!a || !b) {
+      json(res, 404, { error: "搵唔到呢對筆記" });
+      return;
+    }
+    const keep = (a.createdAt || "") <= (b.createdAt || "") ? a : b;
+    const drop = keep === a ? b : a;
+    const tags = [];
+    for (const x of [...(keep.tags || []), ...(drop.tags || [])]) {
+      const s = String(x).trim();
+      if (s && !tags.includes(s)) tags.push(s);
+    }
+    const text = (keep.text || "").trim() + "\n\n" + (drop.text || "").trim();
+    keep.text = text;
+    keep.tags = tags;
+    const rewritten = await maybeRewriteSummary(text);
+    if (rewritten) keep.summary = rewritten;
+    else if (!keep.summary && drop.summary) keep.summary = drop.summary;
+    const dropKey = drop.id;
+    store.notes = store.notes.filter((n) => n.id !== dropKey);
+    store.dismissedMerges = store.dismissedMerges.filter((k) => !k.split("|").includes(dropKey) && !k.split("|").includes(keep.id));
+    save(store);
+    json(res, 200, { ok: true, note: keep, deleted: dropKey });
     return;
   }
 
