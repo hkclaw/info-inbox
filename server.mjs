@@ -13,6 +13,8 @@ const PORT = Number(process.env.PORT || 3741);
 const dataDir = path.join(root, "data");
 const storeFile = path.join(dataDir, "inbox.json");
 const modelFile = path.join(dataDir, "ollama-model.json");
+const vectorFile = path.join(dataDir, "vectors.json");
+const EMBED_MODEL = process.env.OLLAMA_EMBED || "nomic-embed-text";
 const OLLAMA = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 const OLLAMA_MS = Number(process.env.OLLAMA_MS || 90000);
@@ -412,6 +414,7 @@ async function ingestText(text, opts = {}) {
   store.notes.unshift(note);
   save(store);
   if (unsupported) {
+    await embedNote(note.id, trimmed);
     return { status: 200, body: { ok: true, note, classified: false, question: null } };
   }
   const result = await classify(trimmed);
@@ -439,6 +442,7 @@ async function ingestText(text, opts = {}) {
     row.classifyError = result.error || CLASSIFY_FAIL;
   }
   save(next);
+  await embedNote(row.id, row.text || trimmed);
   return { status: 200, body: { ok: true, note: row, classified: !!result.ok, question: queued } };
 }
 
@@ -512,6 +516,139 @@ async function classify(text) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+
+function cosine(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const m = Math.sqrt(na) * Math.sqrt(nb);
+  return m ? dot / m : 0;
+}
+
+function mergeSearch(keywordNotes, vecNotes) {
+  const seen = new Set();
+  const out = [];
+  for (const n of keywordNotes || []) {
+    const id = n && n.id;
+    if (id == null || seen.has(id)) continue;
+    seen.add(id);
+    out.push(n);
+  }
+  for (const n of vecNotes || []) {
+    const id = n && n.id;
+    if (id == null || seen.has(id)) continue;
+    seen.add(id);
+    out.push(n);
+  }
+  return out;
+}
+
+function isEmbedModel(name) {
+  const n = String(name || "");
+  return n === EMBED_MODEL || n.startsWith(EMBED_MODEL + ":");
+}
+
+function loadVectors() {
+  try {
+    const s = JSON.parse(fs.readFileSync(vectorFile, "utf8"));
+    return s && typeof s === "object" && !Array.isArray(s) ? s : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveVectors(map) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(vectorFile, JSON.stringify(map));
+}
+
+function dropVector(id) {
+  const map = loadVectors();
+  if (map[id]) {
+    delete map[id];
+    saveVectors(map);
+  }
+}
+
+async function embedStatus() {
+  const listed = await listOllamaModels();
+  if (!listed.ok) return { ok: false, embedder: false };
+  return { ok: true, embedder: listed.models.some(isEmbedModel), model: EMBED_MODEL };
+}
+
+async function embedText(text) {
+  const status = await embedStatus();
+  if (!status.ok) return { ok: false, down: true };
+  if (!status.embedder) return { ok: false, missing: true };
+  const prompt = String(text || "").slice(0, 4000);
+  if (!prompt.trim()) return { ok: false };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    let r = await fetch(OLLAMA + "/api/embed", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({ model: EMBED_MODEL, input: prompt }),
+    });
+    let data = await r.json().catch(() => ({}));
+    let vec = Array.isArray(data.embeddings) ? data.embeddings[0] : data.embedding;
+    if (!Array.isArray(vec) || !vec.length) {
+      r = await fetch(OLLAMA + "/api/embeddings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: ctrl.signal,
+        body: JSON.stringify({ model: EMBED_MODEL, prompt }),
+      });
+      data = await r.json().catch(() => ({}));
+      vec = data.embedding;
+    }
+    if (!Array.isArray(vec) || !vec.length) return { ok: false };
+    return { ok: true, embedding: vec };
+  } catch {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function embedNote(id, text) {
+  const out = await embedText(text);
+  if (!out.ok) return out;
+  const map = loadVectors();
+  map[id] = out.embedding;
+  saveVectors(map);
+  return out;
+}
+
+async function searchAll(q, store) {
+  const kw = searchHay(q, store);
+  const emb = await embedText(q);
+  if (!emb.ok) {
+    return { notes: kw.notes, questions: kw.questions, embedder: false, ollama: !emb.down };
+  }
+  const vecs = loadVectors();
+  const scored = [];
+  for (const n of store.notes) {
+    const v = vecs[n.id];
+    if (!Array.isArray(v) || !v.length) continue;
+    const s = cosine(emb.embedding, v);
+    if (s >= 0.32) scored.push({ n, s });
+  }
+  scored.sort((a, b) => b.s - a.s);
+  const vecNotes = scored.slice(0, 12).map((x) => x.n);
+  return {
+    notes: mergeSearch(kw.notes, vecNotes),
+    questions: kw.questions,
+    embedder: true,
+    ollama: true,
+  };
 }
 
 function searchHay(q, store) {
@@ -640,6 +777,7 @@ const server = http.createServer(async (req, res) => {
     }
     store.notes.splice(i, 1);
     save(store);
+    dropVector(id);
     json(res, 200, { ok: true, deleted: id });
     return;
   }
@@ -666,6 +804,7 @@ const server = http.createServer(async (req, res) => {
     }
     row.text = text;
     save(store);
+    await embedNote(row.id, text);
     json(res, 200, { ok: true, note: row });
     return;
   }
@@ -688,6 +827,7 @@ const server = http.createServer(async (req, res) => {
       row.classifyError = result.error || CLASSIFY_FAIL;
     }
     save(store);
+    await embedNote(row.id, row.text || "");
     json(res, 200, { ok: true, note: row, classified: !!result.ok });
     return;
   }
@@ -698,7 +838,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (method === "GET" && u.pathname === "/api/search") {
-    json(res, 200, searchHay(u.searchParams.get("q") || "", load()));
+    const out = await searchAll(u.searchParams.get("q") || "", load());
+    json(res, 200, out);
+    return;
+  }
+
+  if (method === "GET" && u.pathname === "/api/embed-status") {
+    json(res, 200, await embedStatus());
     return;
   }
 

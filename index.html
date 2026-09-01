@@ -642,6 +642,7 @@
           <input type="search" id="q" placeholder="關鍵字" autocomplete="off">
           <div class="row"><button class="go" type="submit">搜</button></div>
         </form>
+        <p id="embedHint" class="ollama-setup" hidden>未有 embedder。本機跑 <code>ollama pull nomic-embed-text</code>。11434 通就照 keyword 搜。</p>
         <div id="searchList" class="empty">未搜。輸入關鍵字搵筆記同問題。</div>
       </section>
       <section id="pending">
@@ -810,6 +811,7 @@ tabs.forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.tab === "pending") loadPending();
   if (b.dataset.tab === "merge") loadMerge();
   if (b.dataset.tab === "graph") loadGraph();
+  if (b.dataset.tab === "search") refreshEmbedHint();
 }));
 
 let tagFilter = "";
@@ -1845,6 +1847,23 @@ dumpPaper.addEventListener("drop", (e) => {
   const list = e.dataTransfer && e.dataTransfer.files;
   if (list && list.length) stageFiles(list);
 });
+
+
+async function refreshEmbedHint() {
+  const el = document.getElementById("embedHint");
+  if (!el) return;
+  try {
+    const r = await fetch("/api/embed-status");
+    const data = await r.json().catch(() => ({}));
+    if (data.ok && !data.embedder) {
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+    }
+  } catch {
+    el.hidden = true;
+  }
+}
 
 document.getElementById("searchForm").addEventListener("submit", async (e) => {
   e.preventDefault();
