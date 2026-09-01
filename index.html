@@ -7,135 +7,479 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0b0f12;
-      --card: #141a1f;
-      --line: #243036;
-      --text: #e8eef0;
-      --muted: #8b9aa0;
-      --acc: #5eead4;
-      --acc-ink: #042f2e;
-      --warn: #fbbf24;
-      --danger: #fb7185;
+      --bg: #211f1d;
+      --bg-deep: #1b1a18;
+      --surface: #282624;
+      --writing: #262422;
+      --text: #eee9e1;
+      --muted: #aaa39b;
+      --faint: #756f68;
+      --acc: #c98f63;
+      --acc-soft: rgba(201, 143, 99, 0.16);
+      --acc-ink: #1b1a18;
+      --danger: #c88476;
+      --warn: #c98f63;
+      --line: #34312e;
+      --line-soft: #2e2b28;
+      --sidebar-w: 224px;
+      --measure: 700px;
+      --ease: 160ms ease;
+      --font: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC",
+        "Microsoft JhengHei", sans-serif;
+      --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino,
+        "Noto Serif TC", "Songti TC", serif;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body {
       margin: 0;
-      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 14px/1.6 var(--font);
       background: var(--bg);
       color: var(--text);
+      -webkit-font-smoothing: antialiased;
     }
-    header { padding: 28px 20px 0; max-width: 720px; margin: 0 auto; }
-    h1 { font-size: 28px; font-weight: 650; letter-spacing: -0.03em; margin: 0 0 8px; }
-    .sub { color: var(--muted); margin: 0 0 18px; font-size: 14.5px; }
-    nav {
-      display: flex; gap: 4px; flex-wrap: wrap;
-      margin: 0 0 22px; padding: 5px;
-      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    button, input, textarea { font: inherit; color: inherit; }
+    [hidden] { display: none !important; }
+
+    .app {
+      display: flex;
+      min-height: 100%;
     }
-    nav button {
-      padding: 9px 14px; border: 0; border-radius: 10px; font: inherit;
-      cursor: pointer; background: transparent; color: var(--text);
-      display: inline-flex; align-items: center; gap: 6px;
+
+    /* ——— Bear-like left text nav ——— */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--bg-deep);
+      border-right: 1px solid var(--line-soft);
+      display: flex;
+      flex-direction: column;
+      padding: 22px 14px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
     }
-    nav button.on { background: var(--acc); color: var(--acc-ink); font-weight: 650; }
+    .brand {
+      padding: 2px 10px 22px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: var(--text);
+    }
+    .brand span {
+      color: var(--faint);
+      font-weight: 500;
+      margin-left: 4px;
+    }
+    .sidebar nav {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+    }
+    .sidebar nav button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      text-align: left;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      cursor: pointer;
+      transition: background var(--ease), color var(--ease);
+    }
+    .sidebar nav button:hover {
+      background: var(--surface);
+      color: var(--text);
+    }
+    .sidebar nav button.on {
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 560;
+    }
+    .sidebar nav .lab-en {
+      color: inherit;
+    }
+    .sidebar nav .lab-zh {
+      color: var(--faint);
+      font-size: 12.5px;
+    }
+    .sidebar nav button.on .lab-zh { color: var(--muted); }
     #pendingBadge {
-      display: none; min-width: 18px; padding: 0 6px; border-radius: 999px;
-      background: var(--acc); color: var(--acc-ink);
-      font-size: 12px; font-weight: 700; line-height: 18px; text-align: center;
+      display: none;
+      margin-left: auto;
+      min-width: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 17px;
+      text-align: center;
     }
     #pendingBadge.on { display: inline-block; }
-    nav button.on #pendingBadge { background: var(--acc-ink); color: var(--acc); }
-    .fold { padding: 4px 10px; font-size: 13px; }
-    main { max-width: 720px; margin: 0 auto; padding: 0 20px 96px; }
-    section { display: none; }
+    .sidebar-foot {
+      padding: 14px 10px 4px;
+      border-top: 1px solid var(--line-soft);
+      margin-top: 12px;
+    }
+    .sidebar-foot .hint {
+      margin: 10px 0 0;
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: var(--faint);
+    }
+    .sidebar-foot .backup {
+      width: 100%;
+      justify-content: flex-start;
+      padding-left: 0;
+    }
+
+    /* ——— Main column ——— */
+    .workspace {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    .page-head {
+      max-width: calc(var(--measure) + 96px);
+      width: 100%;
+      margin: 0 auto;
+      padding: 40px 48px 0;
+    }
+    .page-head h1 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: 30px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      color: var(--text);
+    }
+    .page-head .lede {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13.5px;
+      max-width: 42em;
+    }
+    .canvas {
+      max-width: calc(var(--measure) + 96px);
+      width: 100%;
+      margin: 0 auto;
+      padding: 28px 48px 96px;
+      flex: 1;
+    }
+    section { display: none; animation: rise 200ms ease; }
     section.on { display: block; }
-    textarea, input[type=search] {
-      width: 100%; padding: 12px 14px; border: 1px solid var(--line);
-      border-radius: 12px; background: #0a0e11; color: var(--text); font: inherit;
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
     }
-    textarea { min-height: 160px; resize: vertical; }
+
+    /* ——— Dump: Obsidian-like blank page ——— */
+    #dump .paper {
+      background: var(--writing);
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      min-height: 420px;
+    }
+    #dump .paper:focus-within {
+      box-shadow: none;
+    }
     #dump textarea {
-      min-height: 280px; padding: 18px; font-size: 17px; line-height: 1.6;
-      border-radius: 16px;
+      width: 100%;
+      min-height: 420px;
+      padding: 8px 4px 24px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--text);
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 1.7;
+      resize: vertical;
+      outline: none;
     }
-    #dump .go { width: 100%; padding: 14px 20px; font-size: 16px; border-radius: 12px; }
-    .row { margin-top: 12px; display: flex; gap: 10px; }
-    [hidden] { display: none !important; }
+    #dump textarea::placeholder { color: var(--faint); }
+    #dump .row {
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    #dump .go { min-width: 88px; }
+
+    /* ——— Forms & controls ——— */
+    textarea, input[type=search] {
+      width: 100%;
+      padding: 11px 0;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      background: transparent;
+      color: var(--text);
+      outline: none;
+      transition: border-color var(--ease), box-shadow var(--ease);
+    }
+    textarea {
+      padding: 12px 14px;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: var(--writing);
+    }
+    textarea:focus, input[type=search]:focus {
+      border-color: color-mix(in srgb, var(--acc) 55%, var(--line));
+      box-shadow: none;
+    }
+    input[type=search]:focus {
+      border-bottom-color: var(--acc);
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    .row { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     button.go {
-      padding: 10px 16px; border: 0; border-radius: 10px;
-      background: var(--acc); color: var(--acc-ink);
-      font: inherit; font-weight: 650; cursor: pointer;
+      padding: 8px 16px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--acc);
+      color: var(--acc-ink);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter var(--ease), transform var(--ease);
     }
-    button.dim {
-      padding: 10px 16px; border: 0; border-radius: 10px;
-      background: #1c252b; color: var(--text); font: inherit; cursor: pointer;
+    button.go:hover { filter: brightness(1.05); }
+    button.go:active { transform: translateY(1px); }
+    button.go:disabled { opacity: 0.55; cursor: default; }
+    button.dim, button.del, .backup {
+      padding: 6px 10px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background var(--ease), color var(--ease);
     }
-    .empty { color: var(--muted); padding: 36px 8px; font-size: 15px; }
-    .err { color: var(--warn); margin: 10px 0; }
+    button.dim:hover, .backup:hover {
+      background: var(--surface);
+      color: var(--text);
+    }
+    button.del { color: var(--danger); }
+    button.del:hover {
+      background: rgba(200, 132, 118, 0.1);
+      color: var(--danger);
+    }
+    button.fold {
+      padding: 2px 0;
+      font-size: 12.5px;
+      color: var(--faint);
+      background: none;
+      border: 0;
+      cursor: pointer;
+    }
+    button.fold:hover { color: var(--acc); }
+
+    .empty {
+      color: var(--muted);
+      padding: 48px 4px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .err {
+      color: var(--warn);
+      margin: 10px 0 0;
+      font-size: 13px;
+    }
+    #dumpMsg.ok { color: var(--muted); }
+    #noteFilter {
+      color: var(--muted);
+      margin: 0 0 8px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ——— Notes: editorial list (notes.png mood) ——— */
     article {
-      background: var(--card); border: 1px solid var(--line);
-      border-radius: 16px; padding: 18px 18px 16px; margin: 0 0 14px;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line-soft);
+      border-radius: 0;
+      padding: 22px 4px 20px;
+      margin: 0;
+      transition: background var(--ease);
     }
-    article.hl { outline: 2px solid var(--acc); outline-offset: 2px; }
-    article .meta { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
-    article pre { white-space: pre-wrap; margin: 0; font: inherit; color: #c5d0d4; }
+    article:hover { background: color-mix(in srgb, var(--surface) 55%, transparent); }
+    article.hl {
+      background: var(--acc-soft);
+      box-shadow: inset 3px 0 0 var(--acc);
+    }
+    article .meta {
+      color: var(--faint);
+      font-size: 12px;
+      margin-bottom: 8px;
+      letter-spacing: 0.01em;
+    }
+    article pre {
+      white-space: pre-wrap;
+      margin: 10px 0 0;
+      font: inherit;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .sum {
+      font-family: var(--serif);
+      font-weight: 600;
+      margin: 0 0 10px;
+      white-space: pre-wrap;
+      font-size: 18px;
+      letter-spacing: -0.01em;
+      line-height: 1.4;
+      color: var(--text);
+    }
     .tag {
-      display: inline-block; margin: 0 8px 6px 0; color: var(--acc);
-      font-size: 13px; background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+      display: inline-block;
+      margin: 0 6px 6px 0;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line-soft);
+      background: transparent;
+      color: var(--faint);
+      font-size: 12px;
+      cursor: pointer;
+      transition: color var(--ease), border-color var(--ease), background var(--ease);
     }
-    .tag.on { text-decoration: underline; }
-    button.del {
-      padding: 8px 12px; border: 0; border-radius: 10px;
-      background: #1c252b; color: var(--danger); font: inherit; cursor: pointer;
+    .tag:hover {
+      color: var(--text);
+      border-color: color-mix(in srgb, var(--acc) 40%, var(--line));
     }
-    #noteFilter { color: var(--muted); margin: 0 0 12px; }
-    .sum { font-weight: 650; margin: 0 0 10px; white-space: pre-wrap; font-size: 17px; }
+    .tag.on {
+      color: var(--acc);
+      border-color: color-mix(in srgb, var(--acc) 45%, var(--line));
+      background: var(--acc-soft);
+    }
+    article .row { margin-top: 12px; }
+    #searchForm { margin-bottom: 8px; }
+    #searchForm .row { margin-top: 14px; }
+    #searchForm input[type=search] {
+      font-size: 16px;
+      padding: 10px 2px 12px;
+      font-family: var(--serif);
+    }
+
+    @media (max-width: 720px) {
+      .app { flex-direction: column; }
+      .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        border-right: 0;
+        border-bottom: 1px solid var(--line-soft);
+        padding: 14px 12px 10px;
+      }
+      .sidebar nav {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .sidebar nav button { width: auto; }
+      .sidebar-foot {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-top: 0;
+        margin-top: 8px;
+        padding-top: 4px;
+      }
+      .sidebar-foot .backup { width: auto; }
+      .sidebar-foot .hint { margin: 0; }
+      .page-head, .canvas { padding-left: 20px; padding-right: 20px; }
+      .page-head { padding-top: 24px; }
+      #dump textarea, #dump .paper { min-height: 260px; }
+      #dump textarea { font-size: 19px; }
+    }
   </style>
 </head>
 <body>
-<header>
-  <h1>info-inbox</h1>
-  <p class="sub">本機 inbox。資料只存呢部機。分類用本機 Ollama llama3.2。 <button type="button" class="dim" id="backup">下載備份</button></p>
-  <nav>
-    <button type="button" data-tab="dump" class="on">Dump</button>
-    <button type="button" data-tab="notes">Notes</button>
-    <button type="button" data-tab="search">Search</button>
-    <button type="button" data-tab="pending">Pending <span id="pendingBadge"></span></button>
-    <button type="button" data-tab="merge">Merge</button>
-  </nav>
-</header>
-<main>
-  <section id="dump" class="on">
-    <textarea id="dumpText" placeholder="貼一大段文字"></textarea>
-    <div class="row"><button class="go" type="button" id="dumpGo">存入</button></div>
-    <p id="dumpMsg" class="err" hidden></p>
-    <p id="dumpDup" class="err" hidden>呢段同已有 note 一樣。 <button type="button" class="dim" id="dumpConfirm">仍然存入</button></p>
-  </section>
-  <section id="notes">
-    <p id="noteFilter" hidden><span id="noteFilterLabel"></span> <button type="button" class="dim" id="noteFilterClear">清篩選／顯示全部</button></p>
-    <div id="notesList" class="empty">未有筆記。去 Dump 貼一段文字。</div>
-  </section>
-  <section id="search">
-    <form id="searchForm">
-      <input type="search" id="q" placeholder="關鍵字" autocomplete="off">
-      <div class="row"><button class="go" type="submit">搜</button></div>
-    </form>
-    <div id="searchList" class="empty">未搜。輸入關鍵字搵筆記同問題。</div>
-  </section>
-  <section id="pending">
-    <div id="pendingList" class="empty">未有待答問題。含糊 dump 先會喺度出現。</div>
-  </section>
-  <section id="merge">
-    <div id="mergeList" class="empty">未有合併建議。</div>
-  </section>
-</main>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">info-inbox<span>本機</span></div>
+    <nav>
+      <button type="button" data-tab="dump" class="on"><span class="lab-en">Dump</span> <span class="lab-zh">傾倒</span></button>
+      <button type="button" data-tab="notes"><span class="lab-en">Notes</span> <span class="lab-zh">筆記</span></button>
+      <button type="button" data-tab="search"><span class="lab-en">Search</span> <span class="lab-zh">搜尋</span></button>
+      <button type="button" data-tab="pending"><span class="lab-en">Pending</span> <span class="lab-zh">待答</span> <span id="pendingBadge"></span></button>
+      <button type="button" data-tab="merge"><span class="lab-en">Merge</span> <span class="lab-zh">合併</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <button type="button" class="backup" id="backup">下載備份</button>
+      <p class="hint">本機 inbox。資料只存呢部機。分類用本機 Ollama llama3.2。</p>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="page-head">
+      <h1 id="pageTitle">傾倒</h1>
+      <p class="lede" id="pageLede">貼一大段文字。分類稍後做。</p>
+    </header>
+    <main class="canvas">
+      <section id="dump" class="on">
+        <div class="paper">
+          <textarea id="dumpText" placeholder="貼一大段文字"></textarea>
+        </div>
+        <div class="row"><button class="go" type="button" id="dumpGo">存入</button></div>
+        <p id="dumpMsg" class="err" hidden></p>
+        <p id="dumpDup" class="err" hidden>呢段同已有 note 一樣。 <button type="button" class="dim" id="dumpConfirm">仍然存入</button></p>
+      </section>
+      <section id="notes">
+        <p id="noteFilter" hidden><span id="noteFilterLabel"></span> <button type="button" class="dim" id="noteFilterClear">清篩選／顯示全部</button></p>
+        <div id="notesList" class="empty">未有筆記。去 Dump 貼一段文字。</div>
+      </section>
+      <section id="search">
+        <form id="searchForm">
+          <input type="search" id="q" placeholder="關鍵字" autocomplete="off">
+          <div class="row"><button class="go" type="submit">搜</button></div>
+        </form>
+        <div id="searchList" class="empty">未搜。輸入關鍵字搵筆記同問題。</div>
+      </section>
+      <section id="pending">
+        <div id="pendingList" class="empty">未有待答問題。含糊 dump 先會喺度出現。</div>
+      </section>
+      <section id="merge">
+        <div id="mergeList" class="empty">未有合併建議。</div>
+      </section>
+    </main>
+  </div>
+</div>
 <script>
-const tabs = [...document.querySelectorAll("nav button")];
+const tabs = [...document.querySelectorAll(".sidebar nav button")];
 const sections = [...document.querySelectorAll("section")];
+const pageCopy = {
+  dump: { title: "傾倒", lede: "貼一大段文字。分類稍後做。" },
+  notes: { title: "筆記", lede: "本機筆記。點 tag 篩選。" },
+  search: { title: "搜尋", lede: "搵筆記同問題。" },
+  pending: { title: "待答", lede: "含糊 dump 留下嘅待答問題。" },
+  merge: { title: "合併", lede: "重疊筆記建議。接受或唔合。" },
+};
 function showTab(id) {
   tabs.forEach((b) => b.classList.toggle("on", b.dataset.tab === id));
   sections.forEach((s) => s.classList.toggle("on", s.id === id));
+  const copy = pageCopy[id] || pageCopy.dump;
+  document.getElementById("pageTitle").textContent = copy.title;
+  document.getElementById("pageLede").textContent = copy.lede;
 }
 tabs.forEach((b) => b.addEventListener("click", () => {
   showTab(b.dataset.tab);
@@ -193,7 +537,7 @@ function noteCard(n, withDelete) {
   pre.textContent = n.text || "";
   const fold = document.createElement("button");
   fold.type = "button";
-  fold.className = "dim fold";
+  fold.className = "fold";
   const openBody = !!(highlightId && n.id === highlightId);
   pre.hidden = !openBody;
   fold.textContent = openBody ? "收起正文" : "睇正文";
@@ -506,6 +850,7 @@ async function ingestDump(confirmDup) {
   const dupEl = document.getElementById("dumpDup");
   const text = document.getElementById("dumpText").value;
   msg.hidden = true;
+  msg.classList.remove("ok");
   dupEl.hidden = true;
   const body = { text };
   if (confirmDup) body.confirm = true;
@@ -527,8 +872,13 @@ async function ingestDump(confirmDup) {
   document.getElementById("dumpText").value = "";
   msg.hidden = false;
   if (data.note && data.note.classifyError) msg.textContent = data.note.classifyError;
-  else if (data.question) msg.textContent = "已存，有待答問題";
-  else msg.textContent = "已分類";
+  else if (data.question) {
+    msg.classList.add("ok");
+    msg.textContent = "已存，有待答問題";
+  } else {
+    msg.classList.add("ok");
+    msg.textContent = "已分類";
+  }
   showTab("notes");
   loadNotes();
   refreshPendingBadge();

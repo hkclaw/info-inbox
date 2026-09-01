@@ -10,7 +10,7 @@ Need Node 18+.
 
     git clone https://github.com/hkclaw/info-inbox.git && cd info-inbox && npm i && npm start
 
-Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1 only. Do not publish this to the public internet.
+Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1 only. Do not publish this to the public internet. The UI shell is a notes-app layout (sidebar + editor), not a form dashboard.
 
 ## V1 (today)
 
