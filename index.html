@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>info-inbox</title>
+  <style>
+    :root { color-scheme: dark; --bg:#111; --card:#1c1c1e; --line:#333; --text:#f2f2f7; --muted:#8e8e93; --acc:#0a84ff; --warn:#ffd60a; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; font: 15px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 16px 16px 0; max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 12px; }
+    nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    nav button { padding: 8px 12px; border: 0; border-radius: 8px; font: inherit; cursor: pointer; background: #2c2c2e; color: var(--text); }
+    nav button.on { background: var(--acc); color: #fff; font-weight: 600; }
+    main { max-width: 720px; margin: 0 auto; padding: 0 16px 80px; }
+    section { display: none; }
+    section.on { display: block; }
+    textarea, input[type=search] { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #000; color: var(--text); font: inherit; }
+    textarea { min-height: 180px; resize: vertical; }
+    .row { margin-top: 8px; display: flex; gap: 8px; }
+    button.go { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--acc); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    .empty { color: var(--muted); padding: 24px 4px; }
+    .err { color: var(--warn); margin: 8px 0; }
+    article { background: var(--card); border-radius: 12px; padding: 12px; margin: 8px 0; }
+    article .meta { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    article pre { white-space: pre-wrap; margin: 0; font: inherit; }
+    .tag { display: inline-block; margin-right: 6px; color: var(--acc); font-size: 12px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>info-inbox</h1>
+  <p class="sub">本機 inbox。資料只存呢部機。未接 Ollama。</p>
+  <nav>
+    <button type="button" data-tab="dump" class="on">Dump</button>
+    <button type="button" data-tab="notes">Notes</button>
+    <button type="button" data-tab="search">Search</button>
+    <button type="button" data-tab="pending">Pending</button>
+  </nav>
+</header>
+<main>
+  <section id="dump" class="on">
+    <textarea id="dumpText" placeholder="貼一大段文字"></textarea>
+    <div class="row"><button class="go" type="button" id="dumpGo">存入</button></div>
+    <p id="dumpMsg" class="err" hidden></p>
+  </section>
+  <section id="notes">
+    <div id="notesList" class="empty">未有筆記。</div>
+  </section>
+  <section id="search">
+    <form id="searchForm">
+      <input type="search" id="q" placeholder="關鍵字" autocomplete="off">
+      <div class="row"><button class="go" type="submit">搜</button></div>
+    </form>
+    <div id="searchList" class="empty">未搜。</div>
+  </section>
+  <section id="pending">
+    <div id="pendingList" class="empty">未有待答問題。</div>
+  </section>
+</main>
+<script>
+const tabs = [...document.querySelectorAll("nav button")];
+const sections = [...document.querySelectorAll("section")];
+function showTab(id) {
+  tabs.forEach((b) => b.classList.toggle("on", b.dataset.tab === id));
+  sections.forEach((s) => s.classList.toggle("on", s.id === id));
+}
+tabs.forEach((b) => b.addEventListener("click", () => {
+  showTab(b.dataset.tab);
+  if (b.dataset.tab === "notes") loadNotes();
+  if (b.dataset.tab === "pending") loadPending();
+}));
+
+function noteCard(n) {
+  const art = document.createElement("article");
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = (n.createdAt || "") + (n.classifyError ? " · " + n.classifyError : "");
+  const tags = document.createElement("div");
+  (n.tags || []).forEach((t) => {
+    const s = document.createElement("span");
+    s.className = "tag";
+    s.textContent = t;
+    tags.appendChild(s);
+  });
+  const pre = document.createElement("pre");
+  pre.textContent = n.summary || n.text || "";
+  art.appendChild(meta);
+  if ((n.tags || []).length) art.appendChild(tags);
+  art.appendChild(pre);
+  return art;
+}
+
+function qCard(item) {
+  const art = document.createElement("article");
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = (item.status || "open") + " · " + (item.createdAt || "");
+  const pre = document.createElement("pre");
+  pre.textContent = item.text || "";
+  art.appendChild(meta);
+  art.appendChild(pre);
+  if (item.answer) {
+    const a = document.createElement("pre");
+    a.textContent = "答：" + item.answer;
+    art.appendChild(a);
+  }
+  return art;
+}
+
+async function loadNotes() {
+  const el = document.getElementById("notesList");
+  const r = await fetch("/api/notes");
+  const data = await r.json();
+  const notes = data.notes || [];
+  if (!notes.length) {
+    el.className = "empty";
+    el.textContent = "未有筆記。";
+    return;
+  }
+  el.className = "";
+  el.replaceChildren(...notes.map(noteCard));
+}
+
+async function loadPending() {
+  const el = document.getElementById("pendingList");
+  const r = await fetch("/api/questions");
+  const data = await r.json();
+  const qs = data.questions || [];
+  if (!qs.length) {
+    el.className = "empty";
+    el.textContent = "未有待答問題。";
+    return;
+  }
+  el.className = "";
+  el.replaceChildren(...qs.map(qCard));
+}
+
+document.getElementById("dumpGo").addEventListener("click", async () => {
+  const msg = document.getElementById("dumpMsg");
+  const text = document.getElementById("dumpText").value;
+  msg.hidden = true;
+  const r = await fetch("/api/ingest", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    msg.hidden = false;
+    msg.textContent = data.error || "存唔到";
+    return;
+  }
+  document.getElementById("dumpText").value = "";
+  msg.hidden = false;
+  msg.textContent = data.note && data.note.classifyError ? data.note.classifyError : "已存";
+  showTab("notes");
+  loadNotes();
+});
+
+document.getElementById("searchForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const el = document.getElementById("searchList");
+  const q = document.getElementById("q").value;
+  const r = await fetch("/api/search?q=" + encodeURIComponent(q));
+  const data = await r.json();
+  const notes = data.notes || [];
+  const questions = data.questions || [];
+  if (!notes.length && !questions.length) {
+    el.className = "empty";
+    el.textContent = "冇結果。";
+    return;
+  }
+  el.className = "";
+  const nodes = [];
+  notes.forEach((n) => nodes.push(noteCard(n)));
+  questions.forEach((item) => nodes.push(qCard(item)));
+  el.replaceChildren(...nodes);
+});
+</script>
+</body>
+</html>
