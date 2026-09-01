@@ -350,6 +350,24 @@
 
     #dump .staged .st-status { display: block; font-size: 12px; color: color-mix(in srgb, var(--paper-ink) 62%, transparent); margin-top: 2px; }
     #dump .staged .st-status.failed { color: var(--danger, #c97a6a); }
+    #dump .pipe {
+      list-style: none;
+      margin: 10px 0 0;
+      padding: 0;
+    }
+    #dump .pipe li {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      padding: 6px 0;
+      border-bottom: 1px solid color-mix(in srgb, var(--paper-ink) 12%, transparent);
+      font-size: 13px;
+    }
+    #dump .pipe .st-status { font-size: 12px; color: color-mix(in srgb, var(--paper-ink) 62%, transparent); }
+    #dump .pipe .st-status.failed { color: var(--danger, #c97a6a); }
+    #dump .pipe .st-status.ok { color: #c98f63; }
+
     #ollamaLive {
       margin: 0;
       font-size: 12.5px;
@@ -638,6 +656,7 @@
           <span id="dumpWaitTime">分類中 · 已等 0 秒</span>
           <span id="dumpWaitLine"></span>
         </p>
+        <ul id="dumpPipe" class="pipe" hidden></ul>
         <p id="dumpMsg" class="err" hidden></p>
         <p id="dumpDup" class="err" hidden>呢段同已有 note 一樣。 <button type="button" class="dim" id="dumpConfirm">仍然存入</button></p>
       </section>
@@ -1619,6 +1638,74 @@ document.getElementById("noteFilterClear").addEventListener("click", () => {
 });
 
 let stagedFiles = []; // { id, file, name, bytes, fileModifiedAt }
+
+let dumpPipeItems = [];
+
+function pipeStageText(item) {
+  if (item.stage === "extract") return "抽出";
+  if (item.stage === "classify") return "分類中";
+  if (item.stage === "done") return "完成";
+  if (item.stage === "pending") return "待答";
+  if (item.stage === "extract-fail") return "未支援抽文字";
+  if (item.stage === "fail") return "失敗：" + (item.detail || "未知原因");
+  return item.detail || "";
+}
+
+function renderPipe() {
+  const el = document.getElementById("dumpPipe");
+  if (!el) return;
+  if (!dumpPipeItems.length) {
+    el.hidden = true;
+    el.replaceChildren();
+    return;
+  }
+  el.hidden = false;
+  el.replaceChildren(...dumpPipeItems.map((item) => {
+    const li = document.createElement("li");
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    const st = document.createElement("span");
+    const bad = item.stage === "fail" || item.stage === "extract-fail";
+    st.className = "st-status" + (bad ? " failed" : (item.stage === "done" || item.stage === "pending" ? " ok" : ""));
+    st.textContent = pipeStageText(item);
+    li.appendChild(name);
+    li.appendChild(st);
+    return li;
+  }));
+}
+
+function ingestNoteOf(data) {
+  return data && (data.note || (data.results && data.results[0] && data.results[0].note)) || null;
+}
+function ingestQuestionOf(data) {
+  return data && (data.question || (data.results && data.results[0] && data.results[0].question)) || null;
+}
+function applyPipeResult(item, data, httpOk) {
+  const note = ingestNoteOf(data);
+  const q = ingestQuestionOf(data);
+  if (note && (note.summary === "未支援抽文字" || (note.text || "").includes("未支援抽文字"))) {
+    item.stage = "extract-fail";
+    item.detail = "未支援抽文字";
+    return;
+  }
+  if (note && note.classifyError) {
+    item.stage = "fail";
+    item.detail = note.classifyError;
+    return;
+  }
+  if (!note) {
+    item.stage = "fail";
+    item.detail = (data && data.error) || "存唔到";
+    return;
+  }
+  if (q) {
+    item.stage = "pending";
+    return;
+  }
+  item.stage = "done";
+}
+
+
 let pendingPasteConfirm = false;
 let pendingFileDupFrom = -1;
 
@@ -1716,6 +1803,9 @@ async function ingestPasteOnly(confirmDup) {
   pendingFileDupFrom = -1;
   const body = { text };
   if (confirmDup) body.confirm = true;
+  const pipe = { id: "paste-" + Date.now(), name: "貼上", stage: "classify" };
+  dumpPipeItems.push(pipe);
+  renderPipe();
   const r = await fetch("/api/ingest", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1725,8 +1815,12 @@ async function ingestPasteOnly(confirmDup) {
   if (r.status === 409) {
     pendingPasteConfirm = true;
     dupEl.hidden = false;
+    dumpPipeItems = dumpPipeItems.filter((x) => x.id !== pipe.id);
+    renderPipe();
     return { ok: false, dup: true };
   }
+  applyPipeResult(pipe, data, r.ok);
+  renderPipe();
   if (!r.ok) {
     msg.hidden = false;
     msg.textContent = data.error || "存唔到";
@@ -1747,31 +1841,45 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
     row.status = "extracting";
     row.failReason = "";
     renderStaged();
+    const pipe = { id: row.id, name: row.name, stage: "extract" };
+    dumpPipeItems.push(pipe);
+    renderPipe();
+    const late = setTimeout(() => {
+      if (pipe.stage === "extract") {
+        pipe.stage = "classify";
+        renderPipe();
+      }
+    }, 600);
     const fd = new FormData();
     fd.append("file", file, row.name);
     if (row.fileModifiedAt) fd.append("fileModifiedAt", row.fileModifiedAt);
     if (confirmNext) fd.append("confirm", "true");
     const r = await fetch("/api/ingest-files", { method: "POST", body: fd });
     const data = await r.json().catch(() => ({}));
+    clearTimeout(late);
     if (r.status === 409) {
       row.status = "ready";
+      dumpPipeItems = dumpPipeItems.filter((x) => x.id !== pipe.id);
       renderStaged();
+      renderPipe();
       pendingFileDupFrom = i;
       pendingPasteConfirm = false;
       dupEl.hidden = false;
       return { ok: false, dup: true, results };
     }
+    const body = data.results && data.results[0] ? data.results[0] : data;
+    applyPipeResult(pipe, body, r.ok);
     if (!r.ok) {
       row.status = "failed";
-      row.failReason = data.error || "存唔到";
+      row.failReason = pipe.detail || data.error || "存唔到";
       renderStaged();
+      renderPipe();
       pendingFileDupFrom = -1;
-      msg.hidden = false;
-      msg.textContent = (data.error || "存唔到") + (row.name ? "（" + row.name + "）" : "");
-      return { ok: false, results };
+      confirmNext = false;
+      results.push(data);
+      continue;
     }
-    const note = data.note || (data.results && data.results[0] && data.results[0].note);
-    if (note && (note.summary === "未支援抽文字" || (note.text || "").includes("未支援抽文字"))) {
+    if (pipe.stage === "extract-fail") {
       row.status = "failed";
       row.failReason = "未支援抽文字";
     } else {
@@ -1779,6 +1887,7 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
       row.failReason = "";
     }
     renderStaged();
+    renderPipe();
     confirmNext = false;
     pendingFileDupFrom = -1;
     results.push(data);
@@ -1827,6 +1936,8 @@ async function dumpSave(confirmDup) {
   go.disabled = true;
   go.textContent = "分類中…";
   go.classList.add("busy");
+  dumpPipeItems = [];
+  renderPipe();
   startDumpWait();
   try {
 

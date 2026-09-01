@@ -1481,8 +1481,7 @@ const server = http.createServer(async (req, res) => {
       try {
         extracted = await extractFileText(filename, part.data);
       } catch {
-        json(res, 400, { error: "抽文字失敗：" + filename });
-        return;
+        extracted = { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
       }
       const out = await ingestText(extracted.text, {
         confirm,
@@ -1504,8 +1503,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (out.status !== 200) {
-        json(res, out.status, { ...out.body, filename, index: i, done: results });
-        return;
+        results.push({ ok: false, error: (out.body && out.body.error) || "存唔到", filename, index: i });
+        continue;
       }
       results.push(out.body);
     }
