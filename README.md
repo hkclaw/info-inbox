@@ -16,10 +16,10 @@ Empty Dump shows three short steps (paste/drop → local Ollama → Pending when
 
 ## V1 (today)
 
-- Dump a block of text. Exact-duplicate text (trim, not fuzzy) warns 「呢段同已有 note 一樣」 and needs 仍然存入. Dump also accepts files (txt/md/csv/json/html/log/pdf/xlsx/xls/docx/pptx locally; other types still become a note with 「未支援抽文字」). Ollama llama3.2 at http://127.0.0.1:11434 writes tags + a one-line summary; if it is down the note stays, tags stay empty, and the page shows 「連唔到 Ollama（127.0.0.1:11434）」. No invented tags.
+- Dump a block of text. Exact-duplicate text (trim, not fuzzy) warns 「呢段同已有 note 一樣」 and needs 仍然存入. Dump also accepts files (txt/md/csv/json/html/log/pdf/xlsx/xls/docx/doc/pptx locally; other types still become a note with 「未支援抽文字」). .ppt and images stay filename-only. Ollama llama3.2 at http://127.0.0.1:11434 writes tags + a one-line summary; if it is down the note stays, tags stay empty, and the page shows 「連唔到 Ollama（127.0.0.1:11434）」. No invented tags.
 - When Ollama is down, Dump shows setup (`ollama serve` / `ollama pull …`) and the model picker stays empty until tags load.
 - Notes list. Click a tag to filter; 「清篩選／顯示全部」 clears. 編輯 PATCHes text only. 刪除 is DELETE /api/notes/:id. Empty tags or classifyError show 「重新分類」.
-- Search finds notes and questions (text / summary / tags / filename / ext). With local Ollama `nomic-embed-text`, Dump stores a vector per note and Search mixes keyword with cosine; if the embedder is missing it stays keyword-only and Search shows `ollama pull nomic-embed-text` (not 連唔到 while 11434 is up).
+- Search finds notes and questions (text / summary / tags / filename / ext). With local Ollama `nomic-embed-text`, Dump stores a vector per note and Search mixes keyword with cosine; notes ingested before nomic was pulled get a background backfill (`POST /api/embed/backfill`, also on server start) that does not block Dump. Search shows 「有 N 條未有向量」／「補緊向量」 while that runs. If the embedder is missing it stays keyword-only and Search shows `ollama pull nomic-embed-text` (not 連唔到 while 11434 is up).
 - Pending: open items have a reply box and 「睇來源筆記」. Answering appends 「（澄清）答：…」 to the source note and reclassifies it. Answered cards stay with 「答：…」.
 - Merge tab: overlapping pairs, accept or dismiss. Does not auto-rewrite the inbox.
 - Tabs: Dump / Notes / Search / Pending / Merge / 圖譜. Localhost 127.0.0.1:3741 only.

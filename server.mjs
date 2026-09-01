@@ -6,6 +6,9 @@ import { PDFParse } from "pdf-parse";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
 import zlib from "node:zlib";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const WordExtractor = require("word-extractor");
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const BIND = process.env.BIND || "127.0.0.1";
@@ -332,6 +335,24 @@ function extractPptx(data, filename) {
   }
 }
 
+
+async function extractDoc(data, filename) {
+  try {
+    if (data[0] === 0x50 && data[1] === 0x4b) {
+      return extractDocx(data, filename);
+    }
+    const extractor = new WordExtractor();
+    const doc = await extractor.extract(Buffer.from(data));
+    const text = String(doc && doc.getBody ? doc.getBody() : "").trim();
+    if (!text) {
+      return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+    }
+    return { text, supported: true };
+  } catch {
+    return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+  }
+}
+
 async function extractDocx(data, filename) {
   try {
     const result = await mammoth.extractRawText({ buffer: data });
@@ -365,6 +386,9 @@ async function extractFileText(filename, data) {
   }
   if (ext === ".docx") {
     return extractDocx(data, filename);
+  }
+  if (ext === ".doc") {
+    return extractDoc(data, filename);
   }
   if (ext === ".pptx") {
     return extractPptx(data, filename);
@@ -576,10 +600,48 @@ function dropVector(id) {
   }
 }
 
+const backfillState = { running: false };
+
+function missingVectorIds() {
+  const vecs = loadVectors();
+  return load().notes.filter((n) => !Array.isArray(vecs[n.id]) || !vecs[n.id].length).map((n) => n.id);
+}
+
 async function embedStatus() {
   const listed = await listOllamaModels();
-  if (!listed.ok) return { ok: false, embedder: false };
-  return { ok: true, embedder: listed.models.some(isEmbedModel), model: EMBED_MODEL };
+  const missing = missingVectorIds().length;
+  if (!listed.ok) return { ok: false, embedder: false, missing, running: backfillState.running };
+  return {
+    ok: true,
+    embedder: listed.models.some(isEmbedModel),
+    missing,
+    running: backfillState.running,
+    model: EMBED_MODEL,
+  };
+}
+
+async function backfillEmbeddings() {
+  if (backfillState.running) return { ok: true, running: true };
+  const listed = await listOllamaModels();
+  if (!listed.ok || !listed.models.some(isEmbedModel)) {
+    return { ok: true, started: false, embedder: !!(listed.ok && listed.models.some(isEmbedModel)), ollama: listed.ok };
+  }
+  backfillState.running = true;
+  try {
+    const notes = load().notes;
+    const vecs = loadVectors();
+    for (const n of notes) {
+      if (Array.isArray(vecs[n.id]) && vecs[n.id].length) continue;
+      try {
+        await embedNote(n.id, n.text || "");
+      } catch {
+        /* one fail must not stop the rest */
+      }
+    }
+  } finally {
+    backfillState.running = false;
+  }
+  return { ok: true, started: true, missing: missingVectorIds().length, running: false };
 }
 
 async function embedText(text) {
@@ -857,6 +919,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "POST" && u.pathname === "/api/embed/backfill") {
+    const st = await embedStatus();
+    if (!st.ok || !st.embedder) {
+      json(res, 200, { ok: true, started: false, embedder: !!st.embedder, ollama: st.ok, missing: st.missing || 0 });
+      return;
+    }
+    backfillEmbeddings().catch(() => {});
+    json(res, 200, { ok: true, started: true, running: true, missing: st.missing || 0 });
+    return;
+  }
+
   const ansPath = /^\/api\/questions\/([^/]+)\/answer$/.exec(u.pathname);
   if (method === "POST" && ansPath) {
     const id = decodeURIComponent(ansPath[1]);
@@ -1079,4 +1152,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, BIND, () => {
   console.log("info-inbox http://" + BIND + ":" + PORT + "/");
+  setTimeout(() => {
+    backfillEmbeddings().catch(() => {});
+  }, 400);
 });

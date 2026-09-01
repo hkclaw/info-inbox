@@ -643,6 +643,7 @@
           <div class="row"><button class="go" type="submit">搜</button></div>
         </form>
         <p id="embedHint" class="ollama-setup" hidden>未有 embedder。本機跑 <code>ollama pull nomic-embed-text</code>。11434 通就照 keyword 搜。</p>
+        <p id="embedBackfill" class="ollama-setup" hidden></p>
         <div id="searchList" class="empty">未搜。輸入關鍵字搵筆記同問題。</div>
       </section>
       <section id="pending">
@@ -1849,19 +1850,39 @@ dumpPaper.addEventListener("drop", (e) => {
 });
 
 
+let embedHintTimer = null;
 async function refreshEmbedHint() {
   const el = document.getElementById("embedHint");
+  const fill = document.getElementById("embedBackfill");
   if (!el) return;
+  if (embedHintTimer) {
+    clearTimeout(embedHintTimer);
+    embedHintTimer = null;
+  }
   try {
     const r = await fetch("/api/embed-status");
     const data = await r.json().catch(() => ({}));
     if (data.ok && !data.embedder) {
       el.hidden = false;
-    } else {
-      el.hidden = true;
+      if (fill) fill.hidden = true;
+      return;
+    }
+    el.hidden = true;
+    const missing = data.missing | 0;
+    const onSearch = document.getElementById("search") && document.getElementById("search").classList.contains("on");
+    if (data.ok && data.embedder && missing > 0) {
+      if (fill) {
+        fill.hidden = false;
+        fill.textContent = data.running ? "補緊向量" : ("有 " + missing + " 條未有向量");
+      }
+      if (!data.running) fetch("/api/embed/backfill", { method: "POST" }).catch(() => {});
+      if (onSearch) embedHintTimer = setTimeout(refreshEmbedHint, 2000);
+    } else if (fill) {
+      fill.hidden = true;
     }
   } catch {
     el.hidden = true;
+    if (fill) fill.hidden = true;
   }
 }
 
