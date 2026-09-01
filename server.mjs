@@ -217,6 +217,32 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if ((method === "PATCH" || method === "PUT") && delNote) {
+    const id = decodeURIComponent(delNote[1]);
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const text = String(payload.text || "").trim();
+    if (!text) {
+      json(res, 400, { error: "要有文字" });
+      return;
+    }
+    const store = load();
+    const row = store.notes.find((n) => n.id === id);
+    if (!row) {
+      json(res, 404, { error: "搵唔到呢條筆記" });
+      return;
+    }
+    row.text = text;
+    save(store);
+    json(res, 200, { ok: true, note: row });
+    return;
+  }
+
   const reclass = /^\/api\/notes\/([^/]+)\/reclassify$/.exec(u.pathname);
   if (method === "POST" && reclass) {
     const id = decodeURIComponent(reclass[1]);

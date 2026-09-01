@@ -40,7 +40,7 @@ GET /api/merge-suggestions lists pairs (note ids + a short reason). Accept merge
 
 Click a tag chip on the Notes tab to show only notes with that tag. 「清篩選／顯示全部」 clears the filter.
 
-Each card has 刪除. Confirm runs DELETE /api/notes/:id and removes that note from data/. Missing ids return 「搵唔到呢條筆記」. Questions are not deleted with the note.
+Each card has 編輯 (textarea, 儲存／取消) to PATCH /api/notes/:id with { "text" }. Empty text returns 「要有文字」. Tags, summary, and classifyError are left as-is; use 「重新分類」 if you want a new classify. Each card has 刪除. Confirm runs DELETE /api/notes/:id and removes that note from data/. Missing ids return 「搵唔到呢條筆記」. Questions are not deleted with the note.
 
 Notes with a classifyError or no tags show 「重新分類」. That POSTs /api/notes/:id/reclassify to the same local Ollama (llama3.2). Success writes tags and summary; if Ollama is down the text stays, tags are not invented, and 「連唔到 Ollama（127.0.0.1:11434）」 is shown.
 

@@ -161,6 +161,59 @@ function noteCard(n, withDelete) {
       });
       row.appendChild(rec);
     }
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "dim";
+    edit.textContent = "編輯";
+    const ta = document.createElement("textarea");
+    ta.style.minHeight = "120px";
+    ta.hidden = true;
+    const saveRow = document.createElement("div");
+    saveRow.className = "row";
+    saveRow.hidden = true;
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "go";
+    saveBtn.textContent = "儲存";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "dim";
+    cancelBtn.textContent = "取消";
+    saveRow.appendChild(saveBtn);
+    saveRow.appendChild(cancelBtn);
+    function stopEdit() {
+      ta.hidden = true;
+      saveRow.hidden = true;
+      pre.hidden = false;
+      edit.hidden = false;
+    }
+    edit.addEventListener("click", () => {
+      err.hidden = true;
+      ta.value = n.text || "";
+      pre.hidden = true;
+      ta.hidden = false;
+      saveRow.hidden = false;
+      edit.hidden = true;
+    });
+    cancelBtn.addEventListener("click", () => stopEdit());
+    saveBtn.addEventListener("click", async () => {
+      err.hidden = true;
+      const r = await fetch("/api/notes/" + encodeURIComponent(n.id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: ta.value }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        err.hidden = false;
+        err.textContent = data.error || "存唔到";
+        return;
+      }
+      loadNotes();
+    });
+    art.appendChild(ta);
+    art.appendChild(saveRow);
+    row.appendChild(edit);
     const del = document.createElement("button");
     del.type = "button";
     del.className = "del";
