@@ -26,6 +26,7 @@
     .empty { color: var(--muted); padding: 24px 4px; }
     .err { color: var(--warn); margin: 8px 0; }
     article { background: var(--card); border-radius: 12px; padding: 12px; margin: 8px 0; }
+    article.hl { outline: 2px solid var(--acc); }
     article .meta { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
     article pre { white-space: pre-wrap; margin: 0; font: inherit; }
     .tag { display: inline-block; margin-right: 6px; color: var(--acc); font-size: 12px; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
@@ -100,8 +101,12 @@ function setTagFilter(tag) {
   }
 }
 
+let highlightId = "";
+
 function noteCard(n, withDelete) {
   const art = document.createElement("article");
+  art.dataset.noteId = n.id;
+  if (highlightId && n.id === highlightId) art.classList.add("hl");
   const meta = document.createElement("div");
   meta.className = "meta";
   meta.textContent = (n.createdAt || "") + (n.classifyError ? " · " + n.classifyError : "");
@@ -188,6 +193,17 @@ function qCard(item, canAnswer) {
   pre.textContent = item.text || "";
   art.appendChild(meta);
   art.appendChild(pre);
+  if (item.noteId) {
+    const srcBtn = document.createElement("button");
+    srcBtn.type = "button";
+    srcBtn.className = "dim";
+    srcBtn.textContent = "睇來源筆記";
+    srcBtn.addEventListener("click", () => showSourceNote(item.noteId));
+    const srcRow = document.createElement("div");
+    srcRow.className = "row";
+    srcRow.appendChild(srcBtn);
+    art.appendChild(srcRow);
+  }
   if (item.answer) {
     const a = document.createElement("pre");
     a.textContent = "答：" + item.answer;
@@ -251,6 +267,22 @@ async function loadNotes() {
   }
   el.className = "";
   el.replaceChildren(...notes.map((n) => noteCard(n, true)));
+  if (highlightId) {
+    const hit = el.querySelector('[data-note-id="' + CSS.escape(highlightId) + '"]');
+    if (hit) hit.scrollIntoView({ block: "center" });
+  }
+}
+
+async function showSourceNote(id) {
+  highlightId = id;
+  setTagFilter("");
+  showTab("notes");
+  await loadNotes();
+  const hit = document.querySelector('#notesList [data-note-id="' + CSS.escape(id) + '"]');
+  if (hit) {
+    hit.classList.add("hl");
+    hit.scrollIntoView({ block: "center" });
+  }
 }
 
 async function loadPending() {

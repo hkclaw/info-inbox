@@ -28,7 +28,7 @@ Needs a local Ollama. Default model llama3.2 at http://127.0.0.1:11434.
     ollama serve
     ollama pull llama3.2
 
-Dump still saves if the model is offline. The page then shows 「連唔到 Ollama（127.0.0.1:11434）」 and does not invent tags. Vague dumps may enqueue an open question. Answer on the Pending tab (textarea + 送出) or POST /api/questions/:id/answer with { "answer": "..." }. That stores the answer, sets status to answered, and keeps the card. 404 and already-answered return a clear error.
+Dump still saves if the model is offline. The page then shows 「連唔到 Ollama（127.0.0.1:11434）」 and does not invent tags. Vague dumps may enqueue an open question. Answer on the Pending tab (textarea + 送出) or POST /api/questions/:id/answer with { "answer": "..." }. That stores the answer, sets status to answered, and appends 「（澄清）答：…」 to the source note. Pending cards with a noteId have 「睇來源筆記」 to jump to that note. Already answered, missing noteId, and missing source note return a clear error.
 
 ## Merge
 

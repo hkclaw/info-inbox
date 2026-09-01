@@ -274,11 +274,24 @@ const server = http.createServer(async (req, res) => {
       json(res, 409, { error: "呢條已答過" });
       return;
     }
+    if (!row.noteId) {
+      json(res, 400, { error: "呢條冇來源筆記" });
+      return;
+    }
+    const src = store.notes.find((n) => n.id === row.noteId);
+    if (!src) {
+      json(res, 404, { error: "搵唔到來源筆記" });
+      return;
+    }
+    const line = "（澄清）答：" + answer;
+    src.text = (src.text || "").trim() + "\n\n" + line;
+    if (!Array.isArray(src.clarifications)) src.clarifications = [];
+    src.clarifications.push({ questionId: row.id, answer, at: new Date().toISOString() });
     row.answer = answer;
     row.status = "answered";
     row.answeredAt = new Date().toISOString();
     save(store);
-    json(res, 200, { ok: true, question: row });
+    json(res, 200, { ok: true, question: row, note: src });
     return;
   }
 
