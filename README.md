@@ -38,7 +38,7 @@ If Ollama is down, Dump shows setup steps (`ollama serve` / `ollama pull …`) b
 
 Overlapping notes (shared tags or similar text) show as suggestions. Nothing is rewritten until you accept.
 
-GET /api/merge-suggestions lists pairs (note ids + a short reason). Accept merges bodies, unions tags, keeps one summary (rewrites with Ollama only if it is up), and deletes the other id. Dismiss leaves both notes. Stored in data/. Localhost only, no cloud.
+GET /api/merge-suggestions lists pairs in the same box only (empty box pairs with unclassified only; no cross-box). Accept merges bodies, unions tags, keeps that box, keeps one summary (rewrites with Ollama only if it is up), and deletes the other id. Merge tab uses the same box chips; empty filter shows 「呢個盒冇合併」 / 「未分類冇合併」. Dismiss leaves both notes. Stored in data/. Localhost only, no cloud.
 
 ## Notes
 

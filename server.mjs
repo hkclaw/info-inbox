@@ -184,6 +184,7 @@ function suggestMerges(store) {
       const b = notes[j];
       const key = pairKey(a.id, b.id);
       if (dismissed.has(key)) continue;
+      if (normalizeBox(a.box) !== normalizeBox(b.box)) continue;
       const ta = new Set((a.tags || []).map((x) => String(x).toLowerCase()));
       const tb = new Set((b.tags || []).map((x) => String(x).toLowerCase()));
       const shared = [...ta].filter((x) => tb.has(x));
@@ -1523,6 +1524,10 @@ const server = http.createServer(async (req, res) => {
       json(res, 404, { error: "搵唔到呢對筆記" });
       return;
     }
+    if (normalizeBox(a.box) !== normalizeBox(b.box)) {
+      json(res, 400, { error: "唔同盒唔合併" });
+      return;
+    }
     const keep = (a.createdAt || "") <= (b.createdAt || "") ? a : b;
     const drop = keep === a ? b : a;
     const tags = [];
@@ -1536,7 +1541,7 @@ const server = http.createServer(async (req, res) => {
     const rewritten = await maybeRewriteSummary(text);
     if (rewritten) keep.summary = rewritten;
     else if (!keep.summary && drop.summary) keep.summary = drop.summary;
-    if (!normalizeBox(keep.box) && normalizeBox(drop.box)) keep.box = normalizeBox(drop.box);
+    keep.box = normalizeBox(keep.box) || normalizeBox(drop.box);
     const dropKey = drop.id;
     store.notes = store.notes.filter((n) => n.id !== dropKey);
     store.dismissedMerges = store.dismissedMerges.filter((k) => !k.split("|").includes(dropKey) && !k.split("|").includes(keep.id));

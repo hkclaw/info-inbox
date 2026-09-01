@@ -719,6 +719,13 @@
         <div id="pendingList" class="empty">未有待答問題。含糊 dump 先會喺度出現。</div>
       </section>
       <section id="merge">
+        <p class="row" id="mergeBoxChips"></p>
+        <p class="row box-manage" hidden>
+          <input class="box-rename" placeholder="新盒名" autocomplete="off">
+          <button type="button" class="dim box-rename-go">改名</button>
+          <button type="button" class="del box-unbox">刪盒</button>
+          <span class="err box-manage-err" hidden></span>
+        </p>
         <div id="mergeList" class="empty">未有合併建議。</div>
       </section>
       <section id="graph">
@@ -959,6 +966,7 @@ function applyBoxFilter() {
   replaySearch();
   if (document.getElementById("graph") && document.getElementById("graph").classList.contains("on")) loadGraph();
   if (document.getElementById("pending") && document.getElementById("pending").classList.contains("on")) loadPending();
+  if (document.getElementById("merge") && document.getElementById("merge").classList.contains("on")) loadMerge();
 }
 
 function syncBoxManage() {
@@ -978,6 +986,7 @@ function renderBoxChips(notes) {
   fillBoxChipBar(document.getElementById("searchBoxChips"), notes, pick);
   fillBoxChipBar(document.getElementById("graphBoxChips"), notes, pick);
   fillBoxChipBar(document.getElementById("pendingBoxChips"), notes, pick);
+  fillBoxChipBar(document.getElementById("mergeBoxChips"), notes, pick);
   syncBoxManage();
 }
 
@@ -1816,18 +1825,29 @@ async function loadPending() {
 
 async function loadMerge() {
   const el = document.getElementById("mergeList");
+  const notesRes = await fetch("/api/notes");
+  const notes = ((await notesRes.json()).notes || []);
+  renderBoxChips(notes);
+  const byId = Object.fromEntries(notes.map((n) => [n.id, n]));
   const r = await fetch("/api/merge-suggestions");
   const data = await r.json();
-  const rows = data.suggestions || [];
+  let rows = data.suggestions || [];
+  if (boxFilter != null) {
+    rows = rows.filter((pair) => {
+      const na = byId[pair.a], nb = byId[pair.b];
+      const ba = na ? String(na.box || "") : "";
+      const bb = nb ? String(nb.box || "") : "";
+      return ba === boxFilter && bb === boxFilter;
+    });
+  }
   if (!rows.length) {
     el.className = "empty";
-    el.textContent = "未有合併建議。";
+    el.textContent = boxFilter != null
+      ? (boxFilter === "" ? "未分類冇合併。" : "呢個盒冇合併。")
+      : "未有合併建議。";
     return;
   }
   el.className = "";
-  const notesRes = await fetch("/api/notes");
-  const notes = ((await notesRes.json()).notes || []);
-  const byId = Object.fromEntries(notes.map((n) => [n.id, n]));
   el.replaceChildren(...rows.map((pair) => {
     const art = document.createElement("article");
     const meta = document.createElement("div");
@@ -1836,6 +1856,11 @@ async function loadMerge() {
     art.appendChild(meta);
     [pair.a, pair.b].forEach((id) => {
       const n = byId[id] || { id, text: id };
+      const boxName = String(n.box || "").trim() || "未分類";
+      const lab = document.createElement("div");
+      lab.className = "meta";
+      lab.textContent = boxName;
+      art.appendChild(lab);
       const pre = document.createElement("pre");
       pre.textContent = (n.summary || n.text || id).slice(0, 280);
       art.appendChild(pre);
