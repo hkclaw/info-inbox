@@ -23,7 +23,7 @@ Empty Dump shows three short steps (paste/drop → local Ollama → Pending when
 - Pending: open items have 2-4 short answer chips from the local text model, plus 「自己填」 for the reply box, and 「睇來源筆記」. Clicking a chip POSTs /api/questions/:id/answer the same as typing. Opening Pending fills missing chips via POST /api/questions/:id/suggest; 「再建議」 force-regenerates. Suggestions stay on the question across reload. If Ollama is down, chips stay empty (no invented options), the existing error line shows, and you can still fill it yourself. Answering appends 「（澄清）答：…」 to the source note and reclassifies it. Answered cards stay with 「答：…」.
 - Merge tab: overlapping pairs, accept or dismiss. Does not auto-rewrite the inbox.
 - Tabs: Dump / Notes / Search / Pending / Merge / 圖譜. Localhost 127.0.0.1:3741 only.
-- Graph tab: notes as hollow copper nodes; tags are smaller hollow hubs. Notes link to tags (not note↔note from one shared tag). Merge and pending stay note↔note (pending dashed). Labels cap at 16 characters. Click a note to jump to Notes. Pan/zoom; tag chips filter. Empty inbox shows 「未有筆記」. Local canvas, no cloud.
+- Graph tab: notes as hollow copper nodes; tags are smaller hollow hubs. Notes link to tags (not note↔note from one shared tag). Merge and pending stay note↔note (pending dashed). Labels cap at 16 characters. Click a note to jump to Notes. Pan/zoom; tag chips filter. Same box chips as Notes/Search (「全部」 / named / 「未分類」) filter nodes; an empty box filter shows 「呢個盒冇筆記」 / 「未分類冇筆記」. Empty inbox shows 「未有筆記」. Local canvas, no cloud.
 
 ## Classify
 

@@ -700,6 +700,7 @@
         <div id="mergeList" class="empty">未有合併建議。</div>
       </section>
       <section id="graph">
+        <p class="row" id="graphBoxChips"></p>
         <div id="graphTags"></div>
         <p id="graphEmpty" class="empty" hidden>未有筆記</p>
         <canvas id="graphCanvas" width="800" height="520"></canvas>
@@ -924,15 +925,17 @@ function fillBoxChipBar(el, notes, onPick) {
   el.replaceChildren(...nodes);
 }
 
+function applyBoxFilter() {
+  loadNotes();
+  replaySearch();
+  if (document.getElementById("graph") && document.getElementById("graph").classList.contains("on")) loadGraph();
+}
+
 function renderBoxChips(notes) {
-  fillBoxChipBar(document.getElementById("boxChips"), notes, () => {
-    loadNotes();
-    replaySearch();
-  });
-  fillBoxChipBar(document.getElementById("searchBoxChips"), notes, () => {
-    loadNotes();
-    replaySearch();
-  });
+  const pick = () => applyBoxFilter();
+  fillBoxChipBar(document.getElementById("boxChips"), notes, pick);
+  fillBoxChipBar(document.getElementById("searchBoxChips"), notes, pick);
+  fillBoxChipBar(document.getElementById("graphBoxChips"), notes, pick);
 }
 
 let lastSearchQ = "";
@@ -1433,9 +1436,15 @@ async function loadGraph() {
     fetch("/api/merge-suggestions").then((r) => r.json()).catch(() => ({ suggestions: [] })),
     fetch("/api/questions").then((r) => r.json()).catch(() => ({ questions: [] })),
   ]);
-  const notes = Array.isArray(notesRes.notes) ? notesRes.notes : [];
+  const allNotes = Array.isArray(notesRes.notes) ? notesRes.notes : [];
+  renderBoxChips(allNotes);
+  let notes = allNotes;
+  if (boxFilter != null) notes = notes.filter((n) => String(n.box || "") === boxFilter);
   if (!notes.length) {
     em.hidden = false;
+    em.textContent = !allNotes.length
+      ? "未有筆記"
+      : (boxFilter === "" ? "未分類冇筆記。" : "呢個盒冇筆記。");
     c.style.display = "none";
     document.getElementById("graphTags").replaceChildren();
     return;
