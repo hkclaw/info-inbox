@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PDFParse } from "pdf-parse";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const BIND = process.env.BIND || "127.0.0.1";
@@ -12,6 +13,8 @@ const OLLAMA = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$
 const MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 const OLLAMA_MS = Number(process.env.OLLAMA_MS || 20000);
 const CLASSIFY_FAIL = "連唔到 Ollama（127.0.0.1:11434）";
+const TEXT_EXTS = new Set([".txt", ".md", ".csv", ".json", ".html", ".log"]);
+const UNSUPPORTED_BODY = "未支援抽文字";
 
 function emptyStore() {
   return { notes: [], questions: [], dismissedMerges: [] };
@@ -105,6 +108,150 @@ function readBody(req) {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
+}
+
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+function parseMultipart(buf, boundary) {
+  const parts = [];
+  const sep = Buffer.from("--" + boundary);
+  let start = indexOf(buf, sep, 0);
+  while (start >= 0) {
+    let partStart = start + sep.length;
+    if (buf[partStart] === 45 && buf[partStart + 1] === 45) break; // --
+    if (buf[partStart] === 13 && buf[partStart + 1] === 10) partStart += 2;
+    else if (buf[partStart] === 10) partStart += 1;
+    const next = indexOf(buf, sep, partStart);
+    if (next < 0) break;
+    let partEnd = next;
+    if (partEnd >= 2 && buf[partEnd - 2] === 13 && buf[partEnd - 1] === 10) partEnd -= 2;
+    else if (partEnd >= 1 && buf[partEnd - 1] === 10) partEnd -= 1;
+    const part = buf.subarray(partStart, partEnd);
+    const headerEnd = findHeaderEnd(part);
+    if (headerEnd < 0) {
+      start = next;
+      continue;
+    }
+    const headers = part.subarray(0, headerEnd).toString("utf8");
+    const bodyStart = headerEnd;
+    const nameMatch = /name="([^"]+)"/i.exec(headers);
+    const fileMatch = /filename="([^"]*)"/i.exec(headers);
+    const name = nameMatch ? nameMatch[1] : "";
+    const filename = fileMatch ? path.basename(fileMatch[1].replace(/\\/g, "/")) : null;
+    parts.push({ name, filename, data: part.subarray(bodyStart) });
+    start = next;
+  }
+  return parts;
+}
+
+function indexOf(buf, needle, from) {
+  return buf.indexOf(needle, from);
+}
+
+function findHeaderEnd(part) {
+  for (let i = 0; i < part.length - 3; i++) {
+    if (part[i] === 13 && part[i + 1] === 10 && part[i + 2] === 13 && part[i + 3] === 10) return i + 4;
+  }
+  for (let i = 0; i < part.length - 1; i++) {
+    if (part[i] === 10 && part[i + 1] === 10) return i + 2;
+  }
+  return -1;
+}
+
+function basenameOnly(name) {
+  return path.basename(String(name || "").replace(/\\/g, "/")) || "file";
+}
+
+function extOf(filename) {
+  const base = basenameOnly(filename);
+  const i = base.lastIndexOf(".");
+  if (i <= 0) return "";
+  return base.slice(i).toLowerCase();
+}
+
+async function extractFileText(filename, data) {
+  const ext = extOf(filename);
+  if (TEXT_EXTS.has(ext)) {
+    return { text: data.toString("utf8"), supported: true };
+  }
+  if (ext === ".pdf") {
+    const parser = new PDFParse({ data });
+    try {
+      const result = await parser.getText();
+      return { text: String(result && result.text != null ? result.text : ""), supported: true };
+    } finally {
+      try {
+        await parser.destroy();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return { text: basenameOnly(filename) + "\n" + UNSUPPORTED_BODY, supported: false };
+}
+
+async function ingestText(text, opts = {}) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return { status: 400, body: { error: "要有文字先 dump" } };
+  const store = load();
+  if (!opts.confirm) {
+    const dup = store.notes.find((n) => String(n.text || "").trim() === trimmed);
+    if (dup) {
+      return { status: 409, body: { error: "呢段同已有 note 一樣", duplicateId: dup.id } };
+    }
+  }
+  const ingestedAt = new Date().toISOString();
+  const note = {
+    id: String(Date.now()) + (opts.idSuffix != null ? String(opts.idSuffix) : ""),
+    text: trimmed,
+    createdAt: ingestedAt,
+    ingestedAt,
+    source: opts.source || "paste",
+    tags: [],
+    summary: null,
+    classifyError: CLASSIFY_FAIL,
+  };
+  if (opts.source === "file") {
+    note.filename = basenameOnly(opts.filename);
+    note.ext = extOf(opts.filename);
+    note.bytes = Number(opts.bytes) || 0;
+    if (opts.fileModifiedAt) note.fileModifiedAt = String(opts.fileModifiedAt);
+  }
+  store.notes.unshift(note);
+  save(store);
+  const result = await classify(trimmed);
+  const next = load();
+  const row = next.notes.find((n) => n.id === note.id) || note;
+  let queued = null;
+  if (result.ok) {
+    row.tags = result.tags;
+    row.summary = result.summary;
+    row.classifyError = null;
+    if (result.question) {
+      queued = {
+        id: String(Date.now() + 1) + (opts.idSuffix != null ? "q" + String(opts.idSuffix) : ""),
+        text: result.question,
+        status: "open",
+        answer: null,
+        noteId: row.id,
+        createdAt: new Date().toISOString(),
+      };
+      next.questions.unshift(queued);
+    }
+  } else {
+    row.tags = [];
+    row.summary = null;
+    row.classifyError = CLASSIFY_FAIL;
+  }
+  save(next);
+  return { status: 200, body: { ok: true, note: row, classified: !!result.ok, question: queued } };
 }
 
 function sendFile(res, file) {
@@ -422,55 +569,85 @@ const server = http.createServer(async (req, res) => {
       json(res, 400, { error: "JSON 唔啱" });
       return;
     }
-    const text = String(payload.text || "").trim();
-    if (!text) {
-      json(res, 400, { error: "要有文字先 dump" });
+    const out = await ingestText(payload.text, {
+      confirm: !!payload.confirm,
+      source: "paste",
+    });
+    json(res, out.status, out.body);
+    return;
+  }
+
+  if (method === "POST" && u.pathname === "/api/ingest-files") {
+    const ctype = String(req.headers["content-type"] || "");
+    const m = /multipart\/form-data;\s*boundary=(?:"([^"]+)"|([^;]+))/i.exec(ctype);
+    if (!m) {
+      json(res, 400, { error: "要 multipart" });
       return;
     }
-    const store = load();
-    if (!payload.confirm) {
-      const dup = store.notes.find((n) => String(n.text || "").trim() === text);
-      if (dup) {
-        json(res, 409, { error: "呢段同已有 note 一樣", duplicateId: dup.id });
+    const boundary = (m[1] || m[2] || "").trim();
+    if (!boundary) {
+      json(res, 400, { error: "要 multipart" });
+      return;
+    }
+    let raw;
+    try {
+      raw = await readRawBody(req);
+    } catch {
+      json(res, 400, { error: "讀唔到檔" });
+      return;
+    }
+    const parts = parseMultipart(raw, boundary);
+    const confirm = parts.some(
+      (p) => p.name === "confirm" && !p.filename && /^(1|true|yes)$/i.test(p.data.toString("utf8").trim())
+    );
+    const modifiedParts = parts.filter((p) => p.name === "fileModifiedAt" && !p.filename);
+    const fileParts = parts.filter((p) => p.filename != null && (p.name === "file" || p.name === "files"));
+    if (!fileParts.length) {
+      json(res, 400, { error: "要有檔" });
+      return;
+    }
+    const results = [];
+    for (let i = 0; i < fileParts.length; i++) {
+      const part = fileParts[i];
+      const filename = basenameOnly(part.filename);
+      let fileModifiedAt = null;
+      const modPart = modifiedParts[i];
+      if (modPart) {
+        const rawMod = modPart.data.toString("utf8").trim();
+        if (rawMod) fileModifiedAt = rawMod;
+      }
+      let extracted;
+      try {
+        extracted = await extractFileText(filename, part.data);
+      } catch {
+        json(res, 400, { error: "抽文字失敗：" + filename });
         return;
       }
-    }
-    const note = {
-      id: String(Date.now()),
-      text,
-      createdAt: new Date().toISOString(),
-      tags: [],
-      summary: null,
-      classifyError: CLASSIFY_FAIL,
-    };
-    store.notes.unshift(note);
-    save(store);
-    const result = await classify(text);
-    const next = load();
-    const row = next.notes.find((n) => n.id === note.id) || note;
-    let queued = null;
-    if (result.ok) {
-      row.tags = result.tags;
-      row.summary = result.summary;
-      row.classifyError = null;
-      if (result.question) {
-        queued = {
-          id: String(Date.now() + 1),
-          text: result.question,
-          status: "open",
-          answer: null,
-          noteId: row.id,
-          createdAt: new Date().toISOString(),
-        };
-        next.questions.unshift(queued);
+      const out = await ingestText(extracted.text, {
+        confirm,
+        source: "file",
+        filename,
+        bytes: part.data.length,
+        fileModifiedAt,
+        idSuffix: "-" + i + "-" + Math.random().toString(36).slice(2, 7),
+      });
+      if (out.status === 409) {
+        json(res, 409, {
+          error: out.body.error,
+          duplicateId: out.body.duplicateId,
+          filename,
+          index: i,
+          done: results,
+        });
+        return;
       }
-    } else {
-      row.tags = [];
-      row.summary = null;
-      row.classifyError = CLASSIFY_FAIL;
+      if (out.status !== 200) {
+        json(res, out.status, { ...out.body, filename, index: i, done: results });
+        return;
+      }
+      results.push(out.body);
     }
-    save(next);
-    json(res, 200, { ok: true, note: row, classified: !!result.ok, question: queued });
+    json(res, 200, { ok: true, results });
     return;
   }
 

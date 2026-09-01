@@ -4,5 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs"
+  },
+  "dependencies": {
+    "pdf-parse": "^2.4.5"
   }
 }

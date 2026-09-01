@@ -212,6 +212,11 @@
       border-radius: 12px;
       padding: 24px;
       min-height: 60vh;
+      position: relative;
+    }
+    #dump .paper.drag {
+      outline: 2px dashed color-mix(in srgb, var(--acc) 70%, var(--paper-ink));
+      outline-offset: -6px;
     }
     #dump textarea {
       width: 100%;
@@ -232,10 +237,25 @@
     #dump .paper-foot {
       margin-top: 16px;
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
       align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    #dump .paper-foot .file-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #dump .paper-foot .dim {
+      color: color-mix(in srgb, var(--paper-ink) 72%, transparent);
+    }
+    #dump .paper-foot .dim:hover {
+      background: color-mix(in srgb, var(--paper-ink) 8%, transparent);
+      color: var(--paper-ink);
     }
     #dump .go { min-width: 88px; }
+    #dumpFile { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
 
     /* ——— Forms & controls ——— */
     textarea, input[type=search] {
@@ -428,14 +448,18 @@
   <div class="workspace">
     <header class="page-head">
       <h1 id="pageTitle">傾倒</h1>
-      <p class="lede" id="pageLede">貼一大段文字。分類稍後做。</p>
+      <p class="lede" id="pageLede">貼文字或拖檔。分類稍後做。</p>
       <button type="button" class="backup" id="backup">下載備份</button>
     </header>
     <main class="canvas">
       <section id="dump" class="on">
-        <div class="paper">
-          <textarea id="dumpText" placeholder="貼一大段文字"></textarea>
+        <div class="paper" id="dumpPaper">
+          <input type="file" id="dumpFile" multiple>
+          <textarea id="dumpText" placeholder="貼一大段文字，或拖檔入嚟"></textarea>
           <div class="paper-foot">
+            <div class="file-actions">
+              <button class="dim" type="button" id="dumpPick">揀檔</button>
+            </div>
             <button class="go" type="button" id="dumpGo">存入</button>
           </div>
         </div>
@@ -466,7 +490,7 @@
 const tabs = [...document.querySelectorAll(".sidebar nav button")];
 const sections = [...document.querySelectorAll("section")];
 const pageCopy = {
-  dump: { title: "傾倒", lede: "貼一大段文字。分類稍後做。" },
+  dump: { title: "傾倒", lede: "貼文字或拖檔。分類稍後做。" },
   notes: { title: "筆記", lede: "本機筆記。點 tag 篩選。" },
   search: { title: "搜尋", lede: "搵筆記同問題。" },
   pending: { title: "待答", lede: "含糊 dump 留下嘅待答問題。" },
@@ -509,7 +533,12 @@ function noteCard(n, withDelete) {
   if (highlightId && n.id === highlightId) art.classList.add("hl");
   const meta = document.createElement("div");
   meta.className = "meta";
-  meta.textContent = (n.createdAt || "") + (n.classifyError ? " · " + n.classifyError : "");
+  const metaBits = [];
+  const dateShow = n.fileModifiedAt || n.ingestedAt || n.createdAt || "";
+  if (dateShow) metaBits.push(dateShow);
+  if (n.filename) metaBits.push(n.filename);
+  if (n.classifyError) metaBits.push(n.classifyError);
+  meta.textContent = metaBits.join(" · ");
   const tags = document.createElement("div");
   (n.tags || []).forEach((t) => {
     const s = document.createElement("button");
@@ -850,6 +879,8 @@ async function ingestDump(confirmDup) {
   msg.hidden = true;
   msg.classList.remove("ok");
   dupEl.hidden = true;
+  pendingFiles = null;
+  pendingFileConfirm = false;
   const body = { text };
   if (confirmDup) body.confirm = true;
   const r = await fetch("/api/ingest", {
@@ -868,14 +899,70 @@ async function ingestDump(confirmDup) {
     return;
   }
   document.getElementById("dumpText").value = "";
+  showIngestResult(msg, data);
+  showTab("notes");
+  loadNotes();
+  refreshPendingBadge();
+}
+
+function showIngestResult(msg, data) {
   msg.hidden = false;
-  if (data.note && data.note.classifyError) msg.textContent = data.note.classifyError;
-  else if (data.question) {
+  const note = data.note || (data.results && data.results[0] && data.results[0].note);
+  const question = data.question || (data.results || []).some((x) => x.question);
+  if (note && note.classifyError) msg.textContent = note.classifyError;
+  else if (question) {
     msg.classList.add("ok");
     msg.textContent = "已存，有待答問題";
   } else {
     msg.classList.add("ok");
-    msg.textContent = "已分類";
+    const n = data.results ? data.results.length : 1;
+    msg.textContent = n > 1 ? "已存 " + n + " 個檔" : "已分類";
+  }
+}
+
+let pendingFiles = null;
+let pendingFileConfirm = false;
+
+async function ingestFiles(fileList, confirmDup) {
+  const msg = document.getElementById("dumpMsg");
+  const dupEl = document.getElementById("dumpDup");
+  const files = [...(fileList || [])].filter(Boolean);
+  if (!files.length) return;
+  msg.hidden = true;
+  msg.classList.remove("ok");
+  dupEl.hidden = true;
+  pendingFiles = files;
+  pendingFileConfirm = !!confirmDup;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    if (file.lastModified) {
+      fd.append("fileModifiedAt", new Date(file.lastModified).toISOString());
+    }
+    if (confirmDup || pendingFileConfirm) fd.append("confirm", "true");
+    const r = await fetch("/api/ingest-files", { method: "POST", body: fd });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 409) {
+      pendingFiles = files.slice(i);
+      pendingFileConfirm = false;
+      dupEl.hidden = false;
+      return;
+    }
+    if (!r.ok) {
+      pendingFiles = null;
+      msg.hidden = false;
+      msg.textContent = (data.error || "存唔到") + (file.name ? "（" + file.name + "）" : "");
+      return;
+    }
+    // after first confirmed file, remaining in this batch still need confirm only if they dup
+    confirmDup = false;
+    pendingFileConfirm = false;
+    if (i === files.length - 1) {
+      pendingFiles = null;
+      showIngestResult(msg, data);
+    }
   }
   showTab("notes");
   loadNotes();
@@ -883,7 +970,47 @@ async function ingestDump(confirmDup) {
 }
 
 document.getElementById("dumpGo").addEventListener("click", () => ingestDump(false));
-document.getElementById("dumpConfirm").addEventListener("click", () => ingestDump(true));
+document.getElementById("dumpConfirm").addEventListener("click", () => {
+  if (pendingFiles && pendingFiles.length) {
+    ingestFiles(pendingFiles, true);
+    return;
+  }
+  ingestDump(true);
+});
+
+const dumpPaper = document.getElementById("dumpPaper");
+const dumpFile = document.getElementById("dumpFile");
+document.getElementById("dumpPick").addEventListener("click", () => dumpFile.click());
+dumpFile.addEventListener("change", () => {
+  const list = dumpFile.files;
+  if (list && list.length) ingestFiles(list, false);
+  dumpFile.value = "";
+});
+let dragDepth = 0;
+dumpPaper.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  dragDepth++;
+  dumpPaper.classList.add("drag");
+});
+dumpPaper.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+dumpPaper.addEventListener("dragleave", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) dumpPaper.classList.remove("drag");
+});
+dumpPaper.addEventListener("drop", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  dragDepth = 0;
+  dumpPaper.classList.remove("drag");
+  const list = e.dataTransfer && e.dataTransfer.files;
+  if (list && list.length) ingestFiles(list, false);
+});
 
 document.getElementById("searchForm").addEventListener("submit", async (e) => {
   e.preventDefault();
