@@ -847,6 +847,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     store.notes.splice(i, 1);
+    store.questions = (store.questions || []).filter((q) => {
+      if (q.noteId !== id) return true;
+      return (q.status || "open") !== "open";
+    });
     save(store);
     dropVector(id);
     json(res, 200, { ok: true, deleted: id });
@@ -880,6 +884,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "POST" && u.pathname === "/api/notes/reclassify-missing") {
+    const store = load();
+    let classified = 0, failed = 0;
+    for (const row of store.notes) {
+      const need = !!(row.classifyError || !(row.tags || []).length);
+      if (!need || row.summary === "未支援抽文字") continue;
+      try {
+        const result = await classify(row.text || "");
+        if (result.ok) {
+          row.tags = result.tags;
+          row.summary = result.summary;
+          row.classifyError = null;
+          classified++;
+        } else {
+          row.classifyError = result.error || CLASSIFY_FAIL;
+          failed++;
+        }
+        await embedNote(row.id, row.text || "");
+      } catch {
+        failed++;
+      }
+    }
+    save(store);
+    json(res, 200, { ok: true, classified, failed });
+    return;
+  }
+
   const reclass = /^\/api\/notes\/([^/]+)\/reclassify$/.exec(u.pathname);
   if (method === "POST" && reclass) {
     const id = decodeURIComponent(reclass[1]);
@@ -904,7 +935,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (method === "GET" && u.pathname === "/api/questions") {
-    json(res, 200, { questions: load().questions });
+    const store = load();
+    const ids = new Set((store.notes || []).map((n) => n.id));
+    const questions = (store.questions || []).map((q) => ({
+      ...q,
+      sourceMissing: !!(q.noteId && !ids.has(q.noteId)),
+    }));
+    json(res, 200, { questions });
     return;
   }
 

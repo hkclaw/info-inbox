@@ -635,6 +635,7 @@
       </section>
       <section id="notes">
         <p id="noteFilter" hidden><span id="noteFilterLabel"></span> <button type="button" class="dim" id="noteFilterClear">清篩選／顯示全部</button></p>
+        <p class="row" id="reclassRow"><button type="button" class="dim" id="reclassMissing">重新分類未分類</button></p>
         <div id="notesList" class="empty">未有筆記。去傾倒貼一段文字。</div>
       </section>
       <section id="search">
@@ -1024,7 +1025,13 @@ function qCard(item, canAnswer) {
   pre.textContent = item.text || "";
   art.appendChild(meta);
   art.appendChild(pre);
-  if (item.noteId) {
+  if (item.sourceMissing) {
+    const gone = document.createElement("p");
+    gone.className = "err";
+    gone.style.margin = "6px 0 0";
+    gone.textContent = "來源已刪";
+    art.appendChild(gone);
+  } else if (item.noteId) {
     const srcBtn = document.createElement("button");
     srcBtn.type = "button";
     srcBtn.className = "dim";
@@ -1421,8 +1428,13 @@ window.addEventListener("resize", () => {
 })();
 
 async function showSourceNote(id) {
+  if (!id) return;
   highlightId = id;
   setTagFilter("");
+  const r = await fetch("/api/notes");
+  const data = await r.json().catch(() => ({}));
+  const notes = data.notes || [];
+  if (!notes.some((n) => n.id === id)) return;
   showTab("notes");
   await loadNotes();
   const hit = document.querySelector('#notesList [data-note-id="' + CSS.escape(id) + '"]');
@@ -1520,6 +1532,18 @@ async function loadMerge() {
   }));
 }
 
+
+document.getElementById("reclassMissing").addEventListener("click", async () => {
+  const btn = document.getElementById("reclassMissing");
+  btn.disabled = true;
+  try {
+    await fetch("/api/notes/reclassify-missing", { method: "POST" });
+    await loadNotes();
+    refreshPendingBadge();
+  } finally {
+    btn.disabled = false;
+  }
+});
 document.getElementById("noteFilterClear").addEventListener("click", () => {
   setTagFilter("");
   loadNotes();
