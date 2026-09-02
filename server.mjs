@@ -1846,6 +1846,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const skipPath = /^\/api\/questions\/([^/]+)\/skip$/.exec(u.pathname);
+  if (method === "POST" && skipPath) {
+    const id = decodeURIComponent(skipPath[1]);
+    const store = load();
+    const row = store.questions.find((q) => q.id === id);
+    if (!row) {
+      json(res, 404, { error: "搵唔到呢條問題" });
+      return;
+    }
+    if ((row.status || "open") === "answered") {
+      json(res, 409, { error: "呢條已答過" });
+      return;
+    }
+    if ((row.status || "open") !== "open") {
+      json(res, 409, { error: "呢條已略過" });
+      return;
+    }
+    row.status = "skipped";
+    row.skippedAt = new Date().toISOString();
+    save(store);
+    json(res, 200, { ok: true, question: row });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/merge-suggestions") {
     const store = load();
     json(res, 200, { suggestions: suggestMerges(store) });

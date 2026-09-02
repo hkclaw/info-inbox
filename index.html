@@ -1528,8 +1528,26 @@ function qCard(item, canAnswer) {
       if (data.note && data.note.id) await showSourceNote(data.note.id);
     }
     btn.addEventListener("click", () => sendAnswer(ta.value));
+    const skipBtn = document.createElement("button");
+    skipBtn.type = "button";
+    skipBtn.className = "dim";
+    skipBtn.textContent = "略過";
+    skipBtn.addEventListener("click", async () => {
+      err.hidden = true;
+      skipBtn.disabled = true;
+      const r = await fetch("/api/questions/" + encodeURIComponent(item.id) + "/skip", { method: "POST" });
+      const data = await r.json().catch(() => ({}));
+      skipBtn.disabled = false;
+      if (!r.ok) {
+        err.hidden = false;
+        err.textContent = data.error || "略過唔到";
+        return;
+      }
+      await loadPending();
+    });
     row.appendChild(selfBtn);
     row.appendChild(againBtn);
+    row.appendChild(skipBtn);
     row.appendChild(btn);
     art.appendChild(ta);
     art.appendChild(row);
