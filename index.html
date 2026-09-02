@@ -749,6 +749,7 @@
           <input id="noteTagRm" placeholder="移除 tag" autocomplete="off" style="max-width:120px">
           <button type="button" class="dim" id="noteTagRmSel">移除 tag 去選中</button>
           <button type="button" class="dim" id="noteMergeSel">合併選中</button>
+          <button type="button" class="dim" id="noteReclassSel">重新分類選中</button>
           <button type="button" class="del" id="noteDeleteSel">刪除選中</button>
           <span class="err" id="noteMoveErr" hidden></span>
         </p>
@@ -1795,6 +1796,32 @@ document.getElementById("noteTagRm").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   e.preventDefault();
   removeTagFromSelected();
+});
+
+document.getElementById("noteReclassSel").addEventListener("click", async () => {
+  const err = document.getElementById("noteMoveErr");
+  if (err) err.hidden = true;
+  const ids = [...selectedNoteIds];
+  if (!ids.length) return;
+  const btn = document.getElementById("noteReclassSel");
+  if (btn) btn.disabled = true;
+  const fails = [];
+  for (const id of ids) {
+    try {
+      const r = await fetch("/api/notes/" + encodeURIComponent(id) + "/reclassify", { method: "POST" });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) fails.push(data.error || "分類唔到");
+      else if (!data.classified) fails.push((data.note && data.note.classifyError) || "分類唔到");
+    } catch {
+      fails.push("分類唔到");
+    }
+  }
+  if (btn) btn.disabled = false;
+  await loadNotes();
+  if (fails.length && err) {
+    err.hidden = false;
+    err.textContent = fails[0] + (fails.length > 1 ? ("（另 " + (fails.length - 1) + " 條）") : "");
+  }
 });
 
 document.getElementById("noteMergeSel").addEventListener("click", async () => {
