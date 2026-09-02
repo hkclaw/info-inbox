@@ -1379,6 +1379,36 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "POST" && u.pathname === "/api/tags/delete") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const tag = String(payload.tag || "").trim();
+    if (!tag) {
+      json(res, 400, { error: "要有 tag" });
+      return;
+    }
+    const store = load();
+    let stripped = 0;
+    store.notes.forEach((n) => {
+      const tags = Array.isArray(n.tags) ? n.tags : [];
+      if (!tags.includes(tag)) return;
+      n.tags = tags.filter((t) => t !== tag);
+      stripped += 1;
+    });
+    if (!stripped) {
+      json(res, 404, { error: "搵唔到呢個 tag" });
+      return;
+    }
+    save(store);
+    json(res, 200, { ok: true, tag, stripped });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/models") {
     const listed = await listOllamaModels();
     if (!listed.ok) {

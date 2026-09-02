@@ -733,6 +733,7 @@
           <input id="tagRenameFrom" placeholder="現時 tag" autocomplete="off" style="max-width:120px">
           <input id="tagRenameTo" placeholder="新 tag 名" autocomplete="off" style="max-width:120px">
           <button type="button" class="dim" id="tagRenameGo">改名呢個 tag</button>
+          <button type="button" class="del" id="tagDeleteGo">刪除呢個 tag</button>
           <span class="err" id="tagRenameErr" hidden></span>
         </p>
         <p class="row" id="noteMove" hidden>
@@ -3068,6 +3069,39 @@ document.getElementById("tagRenameGo").addEventListener("click", () => {
     document.getElementById("tagRenameFrom") && document.getElementById("tagRenameFrom").value,
     document.getElementById("tagRenameTo") && document.getElementById("tagRenameTo").value
   );
+});
+async function deleteTag(tagRaw) {
+  const err = document.getElementById("tagRenameErr");
+  if (err) err.hidden = true;
+  const tag = String(tagRaw || "").trim();
+  if (!tag) {
+    if (err) { err.hidden = false; err.textContent = "要有 tag"; }
+    return;
+  }
+  if (!confirm("刪 tag「" + tag + "」？會從所有筆記剝走呢個 tag，筆記本身留低。確認刪除？")) return;
+  let res, data;
+  try {
+    res = await fetch("/api/tags/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tag }),
+    });
+    data = await res.json().catch(() => ({}));
+  } catch {
+    if (err) { err.hidden = false; err.textContent = "刪唔到"; }
+    return;
+  }
+  if (!res.ok) {
+    if (err) { err.hidden = false; err.textContent = data.error || "刪唔到"; }
+    return;
+  }
+  if (tagFilter === tag) setTagFilter("");
+  await loadNotes();
+  replaySearch();
+  if (document.getElementById("graph") && document.getElementById("graph").classList.contains("on")) loadGraph();
+}
+document.getElementById("tagDeleteGo").addEventListener("click", () => {
+  deleteTag(document.getElementById("tagRenameFrom") && document.getElementById("tagRenameFrom").value);
 });
 ["tagRenameFrom", "tagRenameTo"].forEach((id) => {
   const inp = document.getElementById(id);
