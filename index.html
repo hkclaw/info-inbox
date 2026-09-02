@@ -717,6 +717,7 @@
           <span class="move-chips" id="noteMoveChips"></span>
           <input id="noteMoveNew" placeholder="新盒名" autocomplete="off" style="max-width:120px">
           <button type="button" class="dim" id="noteMoveGo">搬去</button>
+          <button type="button" class="dim" id="noteMergeSel">合併選中</button>
           <button type="button" class="del" id="noteDeleteSel">刪除選中</button>
           <span class="err" id="noteMoveErr" hidden></span>
         </p>
@@ -1556,6 +1557,35 @@ document.getElementById("noteMoveNew").addEventListener("keydown", (e) => {
   if (!v) return;
   moveSelectedToBox(v);
 });
+document.getElementById("noteMergeSel").addEventListener("click", async () => {
+  const err = document.getElementById("noteMoveErr");
+  if (err) err.hidden = true;
+  const ids = [...selectedNoteIds];
+  if (ids.length < 2) return;
+  if (!confirm("呢個會合併已選 " + ids.length + " 條筆記。確認合併？")) return;
+  let res, data;
+  try {
+    res = await fetch("/api/notes/merge", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    data = await res.json().catch(() => ({}));
+  } catch {
+    if (err) { err.hidden = false; err.textContent = "合併唔到"; }
+    return;
+  }
+  if (!res.ok) {
+    if (err) { err.hidden = false; err.textContent = data.error || "合併唔到"; }
+    return;
+  }
+  selectedNoteIds.clear();
+  await refreshBoxes();
+  await loadNotes();
+  refreshDumpOnboard();
+  refreshPendingBadge();
+});
+
 document.getElementById("noteDeleteSel").addEventListener("click", async () => {
   const err = document.getElementById("noteMoveErr");
   if (err) err.hidden = true;

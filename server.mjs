@@ -241,6 +241,54 @@ async function maybeRewriteSummary(text) {
   return null;
 }
 
+async function mergeSelectedNotes(ids) {
+  const uniq = [];
+  (ids || []).forEach((id) => {
+    const s = String(id || "");
+    if (s && !uniq.includes(s)) uniq.push(s);
+  });
+  if (uniq.length < 2) return { status: 400, body: { error: "要揀兩條或以上" } };
+  const store = load();
+  const rows = uniq.map((id) => store.notes.find((n) => n.id === id));
+  if (rows.some((n) => !n)) return { status: 404, body: { error: "搵唔到呢條筆記" } };
+  const boxes = new Set(rows.map((n) => normalizeBox(n.box)));
+  if (boxes.size !== 1) return { status: 400, body: { error: "唔同盒唔合併" } };
+  const sorted = rows.slice().sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  const keep = sorted[0];
+  const drops = sorted.slice(1);
+  const tags = [];
+  sorted.forEach((n) => {
+    (n.tags || []).forEach((x) => {
+      const s = String(x).trim();
+      if (s && !tags.includes(s)) tags.push(s);
+    });
+  });
+  keep.text = sorted.map((n) => String(n.text || "").trim()).filter(Boolean).join("\n\n");
+  keep.tags = tags;
+  const rewritten = await maybeRewriteSummary(keep.text);
+  if (rewritten) keep.summary = rewritten;
+  else {
+    const fallback = sorted.find((n) => n.summary);
+    if (fallback) keep.summary = fallback.summary;
+  }
+  keep.box = normalizeBox(keep.box);
+  const dropIds = drops.map((n) => n.id);
+  const dropSet = new Set(dropIds);
+  store.notes = store.notes.filter((n) => !dropSet.has(n.id));
+  store.questions = (store.questions || []).filter((q) => {
+    if (!dropSet.has(q.noteId)) return true;
+    return (q.status || "open") !== "open";
+  });
+  store.dismissedMerges = (store.dismissedMerges || []).filter((k) => {
+    const parts = String(k).split("|");
+    return parts.every((p) => !dropSet.has(p) && p !== keep.id);
+  });
+  save(store);
+  dropIds.forEach((id) => dropVector(id));
+  await embedNote(keep.id, keep.text || "");
+  return { status: 200, body: { ok: true, note: keep, deleted: dropIds } };
+}
+
 function save(store) {
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(storeFile, JSON.stringify(store, null, 2));
@@ -1848,6 +1896,19 @@ const server = http.createServer(async (req, res) => {
     dropVector(dropKey);
     await embedNote(keep.id, keep.text || "");
     json(res, 200, { ok: true, note: keep, deleted: dropKey });
+    return;
+  }
+
+  if (method === "POST" && u.pathname === "/api/notes/merge") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const out = await mergeSelectedNotes(payload && payload.ids);
+    json(res, out.status, out.body);
     return;
   }
 
