@@ -1634,8 +1634,17 @@ const server = http.createServer(async (req, res) => {
       rememberBox(row.box);
     }
     save(store);
-    if (hasText) await embedNote(row.id, row.text || "");
-    json(res, 200, { ok: true, note: row });
+    let embedded = false;
+    if (hasText) {
+      try {
+        const emb = await embedNote(row.id, row.text || "");
+        embedded = !!(emb && emb.ok);
+        if (!embedded) dropVector(row.id);
+      } catch {
+        dropVector(row.id);
+      }
+    }
+    json(res, 200, { ok: true, note: row, embedded });
     return;
   }
 
