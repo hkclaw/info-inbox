@@ -1945,6 +1945,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const reopenPath = /^\/api\/questions\/([^/]+)\/reopen$/.exec(u.pathname);
+  if (method === "POST" && reopenPath) {
+    const id = decodeURIComponent(reopenPath[1]);
+    const store = load();
+    const row = store.questions.find((q) => q.id === id);
+    if (!row) {
+      json(res, 404, { error: "搵唔到呢條問題" });
+      return;
+    }
+    if ((row.status || "open") === "open") {
+      json(res, 409, { error: "已經開放" });
+      return;
+    }
+    if ((row.status || "open") === "answered") {
+      delete row.answer;
+      delete row.answeredAt;
+    }
+    delete row.skippedAt;
+    row.status = "open";
+    save(store);
+    json(res, 200, { ok: true, question: row });
+    return;
+  }
+
   if (method === "POST" && u.pathname === "/api/questions/clear-closed") {
     const store = load();
     const before = store.questions || [];

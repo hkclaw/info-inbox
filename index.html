@@ -1614,6 +1614,32 @@ function qCard(item, canAnswer) {
     art.appendChild(ta);
     art.appendChild(row);
     art.appendChild(err);
+  } else if (canAnswer && (item.status || "open") !== "open") {
+    const row = document.createElement("div");
+    row.className = "row";
+    const reopenBtn = document.createElement("button");
+    reopenBtn.type = "button";
+    reopenBtn.className = "dim";
+    reopenBtn.textContent = "重開";
+    const err = document.createElement("p");
+    err.className = "err";
+    err.hidden = true;
+    reopenBtn.addEventListener("click", async () => {
+      err.hidden = true;
+      reopenBtn.disabled = true;
+      const r = await fetch("/api/questions/" + encodeURIComponent(item.id) + "/reopen", { method: "POST" });
+      const data = await r.json().catch(() => ({}));
+      reopenBtn.disabled = false;
+      if (!r.ok) {
+        err.hidden = false;
+        err.textContent = data.error || "重開唔到";
+        return;
+      }
+      await loadPending();
+    });
+    row.appendChild(reopenBtn);
+    art.appendChild(row);
+    art.appendChild(err);
   }
   return art;
 }
