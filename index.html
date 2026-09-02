@@ -697,6 +697,7 @@
         <ul id="dumpPipe" class="pipe" hidden></ul>
         <p id="dumpMsg" class="err" hidden></p>
         <p id="dumpDup" class="err" hidden>呢段同已有 note 一樣。 <button type="button" class="dim" id="dumpConfirm">仍然存入</button></p>
+        <p class="row" id="dumpBoxChips"></p>
       </section>
       <section id="notes">
         <p id="noteFilter" hidden><span id="noteFilterLabel"></span> <button type="button" class="dim" id="noteFilterClear">清篩選／顯示全部</button></p>
@@ -959,6 +960,11 @@ async function refreshBoxes() {
   }
   const inp = document.getElementById("dumpBox");
   if (inp && !inp.dataset.touched && data.box) inp.value = data.box;
+  try {
+    const nr = await fetch("/api/notes");
+    const nd = await nr.json().catch(() => ({}));
+    renderBoxChips(nd.notes || []);
+  } catch {}
 }
 
 function namedBoxesOf(notes) {
@@ -972,12 +978,9 @@ function namedBoxesOf(notes) {
 
 function fillBoxChipBar(el, notes, onPick) {
   if (!el) return;
-  const names = namedBoxesOf(notes);
-  const hasNotes = (notes || []).length > 0;
-  if (!hasNotes && boxFilter == null) {
-    el.replaceChildren();
-    return;
-  }
+  const names = [];
+  knownBoxes.forEach((n) => { if (n && !names.includes(n)) names.push(n); });
+  namedBoxesOf(notes).forEach((n) => { if (!names.includes(n)) names.push(n); });
   function chip(label, value) {
     const b = document.createElement("button");
     b.type = "button";
@@ -995,7 +998,7 @@ function fillBoxChipBar(el, notes, onPick) {
     return (notes || []).filter((n) => String(n.box || "") === value).length;
   }
   const nodes = [chip("全部 " + countFor(null), null), ...names.map((n) => chip(n + " " + countFor(n), n))];
-  if (hasNotes) nodes.push(chip("未分類 " + countFor(""), ""));
+  nodes.push(chip("未分類 " + countFor(""), ""));
   el.replaceChildren(...nodes);
 }
 
@@ -1028,6 +1031,7 @@ function renderBoxChips(notes) {
   fillBoxChipBar(document.getElementById("graphBoxChips"), notes, pick);
   fillBoxChipBar(document.getElementById("pendingBoxChips"), notes, pick);
   fillBoxChipBar(document.getElementById("mergeBoxChips"), notes, pick);
+  fillBoxChipBar(document.getElementById("dumpBoxChips"), notes, pick);
   syncBoxManage();
 }
 
@@ -1593,7 +1597,7 @@ async function loadNotes() {
   const r = await fetch("/api/notes");
   const data = await r.json();
   const all = data.notes || [];
-  knownBoxes = namedBoxesOf(all);
+  namedBoxesOf(all).forEach((n) => { if (!knownBoxes.includes(n)) knownBoxes.push(n); });
   renderBoxChips(all);
   let notes = all;
   if (boxFilter != null) notes = notes.filter((n) => String(n.box || "") === boxFilter);

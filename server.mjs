@@ -64,22 +64,56 @@ function normalizeBox(s) {
   return String(s || "").trim().replace(/\s+/g, " ").slice(0, 40);
 }
 
-function loadCurrentBox() {
+function loadBoxState() {
   try {
     const s = JSON.parse(fs.readFileSync(boxFile, "utf8"));
-    return normalizeBox(s && s.box);
+    const names = Array.isArray(s && s.names)
+      ? s.names.map((n) => normalizeBox(n)).filter(Boolean)
+      : [];
+    return { box: normalizeBox(s && s.box), names };
   } catch {
-    return "";
+    return { box: "", names: [] };
   }
 }
 
-function saveCurrentBox(box) {
+function saveBoxState(box, names) {
+  const uniq = [];
+  (names || []).forEach((n) => {
+    const b = normalizeBox(n);
+    if (b && !uniq.includes(b)) uniq.push(b);
+  });
   fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(boxFile, JSON.stringify({ box: normalizeBox(box) }, null, 2));
+  fs.writeFileSync(boxFile, JSON.stringify({ box: normalizeBox(box), names: uniq }, null, 2));
+}
+
+function loadCurrentBox() {
+  return loadBoxState().box;
+}
+
+function rememberBox(name) {
+  const b = normalizeBox(name);
+  const st = loadBoxState();
+  const names = st.names.slice();
+  if (b && !names.includes(b)) names.push(b);
+  saveBoxState(st.box, names);
+}
+
+function forgetBox(name) {
+  const b = normalizeBox(name);
+  const st = loadBoxState();
+  saveBoxState(st.box === b ? "" : st.box, st.names.filter((n) => n !== b));
+}
+
+function saveCurrentBox(box) {
+  const st = loadBoxState();
+  const b = normalizeBox(box);
+  const names = st.names.slice();
+  if (b && !names.includes(b)) names.push(b);
+  saveBoxState(b, names);
 }
 
 function listBoxes(store) {
-  const out = [];
+  const out = loadBoxState().names.slice();
   for (const n of (store && store.notes) || []) {
     const b = normalizeBox(n.box);
     if (b && !out.includes(b)) out.push(b);
@@ -689,6 +723,7 @@ async function ingestText(text, opts = {}) {
   }
   store.notes.unshift(note);
   save(store);
+  rememberBox(note.box);
   if (unsupported) {
     await embedNote(note.id, trimmed);
     return { status: 200, body: { ok: true, note, classified: false, question: null } };
@@ -1214,13 +1249,17 @@ const server = http.createServer(async (req, res) => {
     }
     const store = load();
     const hit = store.notes.filter((n) => normalizeBox(n.box) === from);
-    if (!hit.length) {
+    const known = loadBoxState().names.includes(from) || hit.length;
+    if (!known) {
       json(res, 404, { error: "搵唔到呢個盒" });
       return;
     }
     hit.forEach((n) => { n.box = to; });
     save(store);
-    if (loadCurrentBox() === from) saveCurrentBox(to);
+    const st = loadBoxState();
+    const names = st.names.map((n) => (n === from ? to : n));
+    if (!names.includes(to)) names.push(to);
+    saveBoxState(st.box === from ? to : st.box, names.filter((n) => n !== from || n === to));
     json(res, 200, { ok: true, from, to, moved: hit.length, boxes: listBoxes(load()) });
     return;
   }
@@ -1244,13 +1283,14 @@ const server = http.createServer(async (req, res) => {
     }
     const store = load();
     const hit = store.notes.filter((n) => normalizeBox(n.box) === box);
-    if (!hit.length) {
+    const known = loadBoxState().names.includes(box) || hit.length;
+    if (!known) {
       json(res, 404, { error: "搵唔到呢個盒" });
       return;
     }
     hit.forEach((n) => { n.box = ""; });
     save(store);
-    if (loadCurrentBox() === box) saveCurrentBox("");
+    forgetBox(box);
     json(res, 200, { ok: true, box, unboxed: hit.length, boxes: listBoxes(load()) });
     return;
   }
@@ -1424,6 +1464,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (wroteVec) saveVectors(map);
     }
+    incoming.forEach((n) => rememberBox(n.box));
     json(res, 200, { ok: true, imported: incoming.length, skipped, added: incoming.length, questions: incomingQs.length });
     return;
   }
@@ -1442,7 +1483,7 @@ const server = http.createServer(async (req, res) => {
     }
     save(emptyStore());
     saveVectors({});
-    saveCurrentBox("");
+    saveBoxState("", []);
     json(res, 200, { ok: true });
     return;
   }
@@ -1540,7 +1581,10 @@ const server = http.createServer(async (req, res) => {
       }
       row.text = text;
     }
-    if (hasBox) row.box = normalizeBox(payload.box);
+    if (hasBox) {
+      row.box = normalizeBox(payload.box);
+      rememberBox(row.box);
+    }
     save(store);
     if (hasText) await embedNote(row.id, row.text || "");
     json(res, 200, { ok: true, note: row });
