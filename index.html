@@ -1641,6 +1641,34 @@ function qCard(item, canAnswer) {
     art.appendChild(row);
     art.appendChild(err);
   }
+  if (canAnswer) {
+    const delRow = document.createElement("div");
+    delRow.className = "row";
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "del";
+    delBtn.textContent = "刪除呢條問題";
+    const delErr = document.createElement("p");
+    delErr.className = "err";
+    delErr.hidden = true;
+    delBtn.addEventListener("click", async () => {
+      delErr.hidden = true;
+      if (!confirm("刪除呢條問題？筆記唔郁。")) return;
+      delBtn.disabled = true;
+      const r = await fetch("/api/questions/" + encodeURIComponent(item.id), { method: "DELETE" });
+      const data = await r.json().catch(() => ({}));
+      delBtn.disabled = false;
+      if (!r.ok) {
+        delErr.hidden = false;
+        delErr.textContent = data.error || "刪唔到";
+        return;
+      }
+      await loadPending();
+    });
+    delRow.appendChild(delBtn);
+    art.appendChild(delRow);
+    art.appendChild(delErr);
+  }
   return art;
 }
 

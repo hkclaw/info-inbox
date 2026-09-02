@@ -1797,6 +1797,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const delQ = /^\/api\/questions\/([^/]+)$/.exec(u.pathname);
+  if (method === "DELETE" && delQ) {
+    const id = decodeURIComponent(delQ[1]);
+    const store = load();
+    const i = (store.questions || []).findIndex((q) => q.id === id);
+    if (i < 0) {
+      json(res, 404, { error: "搵唔到呢條問題" });
+      return;
+    }
+    store.questions.splice(i, 1);
+    save(store);
+    json(res, 200, { ok: true, id });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/search") {
     const out = await searchAll(u.searchParams.get("q") || "", load());
     json(res, 200, out);
