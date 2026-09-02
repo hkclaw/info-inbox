@@ -784,6 +784,7 @@
           <button type="button" class="del box-unbox">刪盒</button>
           <span class="err box-manage-err" hidden></span>
         </p>
+        <p class="row" id="pendingStatusChips"></p>
         <p class="row" id="pendingClearRow">
           <button type="button" class="del" id="pendingClearClosed">清走已關閉</button>
           <span class="err" id="pendingClearErr" hidden></span>
@@ -975,6 +976,7 @@ tabs.forEach((b) => b.addEventListener("click", () => {
 
 let tagFilter = "";
 let boxFilter = null;
+let pendingStatusFilter = "open";
 let knownBoxes = [];
 const selectedNoteIds = new Set();
 
@@ -2359,8 +2361,38 @@ async function refreshPendingBadge() {
   b.classList.toggle("on", n > 0);
 }
 
+function fillPendingStatusChips() {
+  const el = document.getElementById("pendingStatusChips");
+  if (!el) return;
+  function chip(label, value) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "tag" + (pendingStatusFilter === value ? " on" : "");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      pendingStatusFilter = value;
+      loadPending();
+    });
+    return b;
+  }
+  el.replaceChildren(chip("全部", "all"), chip("開放", "open"), chip("略過", "skipped"), chip("已答", "answered"));
+}
+
+function filterPendingByStatus(qs) {
+  if (pendingStatusFilter === "all") return qs;
+  return qs.filter((q) => (q.status || "open") === pendingStatusFilter);
+}
+
+function pendingStatusEmpty() {
+  if (pendingStatusFilter === "open") return "呢度冇開放問題";
+  if (pendingStatusFilter === "skipped") return "呢度冇略過問題";
+  if (pendingStatusFilter === "answered") return "呢度冇已答問題";
+  return "未有待答問題。含糊 dump 先會喺度出現。";
+}
+
 async function loadPending() {
   await refreshPendingBadge();
+  fillPendingStatusChips();
   const el = document.getElementById("pendingList");
   const r = await fetch("/api/questions");
   const data = await r.json();
@@ -2378,7 +2410,13 @@ async function loadPending() {
     el.className = "empty";
     el.textContent = boxFilter != null
       ? (boxFilter === "" ? "未分類冇待答。" : "呢個盒冇待答。")
-      : "未有待答問題。含糊 dump 先會喺度出現。";
+      : pendingStatusEmpty();
+    return;
+  }
+  qs = filterPendingByStatus(qs);
+  if (!qs.length) {
+    el.className = "empty";
+    el.textContent = pendingStatusEmpty();
     return;
   }
   el.className = "";
@@ -2390,6 +2428,12 @@ async function loadPending() {
   const d2 = await r2.json();
   let qs2 = d2.questions || [];
   if (boxFilter != null) qs2 = qs2.filter((item) => (boxOf[item.noteId] || "") === boxFilter);
+  qs2 = filterPendingByStatus(qs2);
+  if (!qs2.length) {
+    el.className = "empty";
+    el.textContent = pendingStatusEmpty();
+    return;
+  }
   el.replaceChildren(...qs2.map((item) => qCard(item, true)));
 }
 
