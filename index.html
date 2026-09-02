@@ -506,6 +506,16 @@
       background: var(--acc-soft);
       border-color: color-mix(in srgb, var(--acc) 40%, var(--hairline));
     }
+    article.picked { border-color: var(--acc); }
+    article .pick {
+      margin: 0 8px 0 0;
+      vertical-align: middle;
+      accent-color: var(--acc);
+    }
+    #noteMove { align-items: center; gap: 8px; flex-wrap: wrap; }
+    #noteMove[hidden] { display: none !important; }
+    #noteMove .move-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    #notePicked { color: var(--text-3); font-size: 12px; }
     article .meta {
       color: var(--text-3);
       font-size: 12px;
@@ -698,6 +708,16 @@
           <span class="err box-manage-err" hidden></span>
         </p>
         <p class="row" id="reclassRow"><button type="button" class="dim" id="reclassMissing">重新分類未分類</button></p>
+        <p class="row" id="noteMove" hidden>
+          <button type="button" class="dim" id="noteSelectAll">全選可見</button>
+          <button type="button" class="dim" id="noteSelectNone">取消</button>
+          <span id="notePicked"></span>
+          <span>搬去呢個盒</span>
+          <span class="move-chips" id="noteMoveChips"></span>
+          <input id="noteMoveNew" placeholder="新盒名" autocomplete="off" style="max-width:120px">
+          <button type="button" class="dim" id="noteMoveGo">搬去</button>
+          <span class="err" id="noteMoveErr" hidden></span>
+        </p>
         <div id="notesList" class="empty">未有筆記。去傾倒貼一段文字。</div>
       </section>
       <section id="search">
@@ -762,7 +782,7 @@ const tabs = [...document.querySelectorAll(".sidebar nav button")];
 const sections = [...document.querySelectorAll("section")];
 const pageCopy = {
   dump: { title: "傾倒", lede: "貼文字或拖檔。分類稍後做。" },
-  notes: { title: "筆記", lede: "本機筆記。點 tag 篩選。" },
+  notes: { title: "筆記", lede: "本機筆記。點 tag 篩選。可多選搬盒。" },
   search: { title: "搜尋", lede: "搵筆記同問題。或問呢個盒。" },
   pending: { title: "待答", lede: "含糊 dump 留下嘅待答問題。" },
   merge: { title: "合併", lede: "重疊筆記建議。接受或唔合。" },
@@ -917,6 +937,7 @@ tabs.forEach((b) => b.addEventListener("click", () => {
 let tagFilter = "";
 let boxFilter = null;
 let knownBoxes = [];
+const selectedNoteIds = new Set();
 
 function currentDumpBox() {
   const inp = document.getElementById("dumpBox");
@@ -1096,6 +1117,7 @@ function noteCard(n, withDelete) {
   const art = document.createElement("article");
   art.dataset.noteId = n.id;
   if (highlightId && n.id === highlightId) art.classList.add("hl");
+  if (withDelete && selectedNoteIds.has(n.id)) art.classList.add("picked");
   const meta = document.createElement("div");
   meta.className = "meta";
   const metaBits = [];
@@ -1109,7 +1131,24 @@ function noteCard(n, withDelete) {
     const dateShow = n.ingestedAt || n.createdAt || "";
     if (dateShow) metaBits.push(formatHkDate(dateShow));
   }
-  meta.textContent = metaBits.join(" · ");
+  if (withDelete) {
+    const pick = document.createElement("input");
+    pick.type = "checkbox";
+    pick.className = "pick";
+    pick.checked = selectedNoteIds.has(n.id);
+    pick.setAttribute("aria-label", "選呢條");
+    pick.addEventListener("click", (e) => e.stopPropagation());
+    pick.addEventListener("change", () => {
+      if (pick.checked) selectedNoteIds.add(n.id);
+      else selectedNoteIds.delete(n.id);
+      art.classList.toggle("picked", pick.checked);
+      refreshMoveBar();
+    });
+    meta.prepend(pick);
+    meta.append(document.createTextNode(metaBits.join(" · ")));
+  } else {
+    meta.textContent = metaBits.join(" · ");
+  }
   const tags = document.createElement("div");
   (n.tags || []).forEach((t) => {
     const s = document.createElement("button");
@@ -1429,6 +1468,90 @@ function qCard(item, canAnswer) {
   return art;
 }
 
+function refreshMoveBar() {
+  const bar = document.getElementById("noteMove");
+  const picked = document.getElementById("notePicked");
+  const chips = document.getElementById("noteMoveChips");
+  const err = document.getElementById("noteMoveErr");
+  if (!bar) return;
+  const n = selectedNoteIds.size;
+  const hasList = document.querySelectorAll("#notesList article[data-note-id]").length > 0;
+  bar.hidden = !hasList;
+  if (picked) picked.textContent = n ? ("已選 " + n) : "";
+  if (err) err.hidden = true;
+  if (!chips) return;
+  chips.replaceChildren();
+  knownBoxes.forEach((name) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "tag";
+    b.textContent = name;
+    b.addEventListener("click", () => moveSelectedToBox(name));
+    chips.appendChild(b);
+  });
+  const none = document.createElement("button");
+  none.type = "button";
+  none.className = "tag";
+  none.textContent = "未分類";
+  none.addEventListener("click", () => moveSelectedToBox(""));
+  chips.appendChild(none);
+}
+
+async function moveSelectedToBox(box) {
+  const err = document.getElementById("noteMoveErr");
+  if (err) err.hidden = true;
+  const ids = [...selectedNoteIds];
+  if (!ids.length) return;
+  const dest = String(box || "").trim().replace(/\s+/g, " ").slice(0, 40);
+  for (const id of ids) {
+    const r = await fetch("/api/notes/" + encodeURIComponent(id), {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ box: dest }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (err) {
+        err.hidden = false;
+        err.textContent = data.error || "搬唔到";
+      }
+      return;
+    }
+  }
+  selectedNoteIds.clear();
+  await refreshBoxes();
+  await loadNotes();
+}
+
+document.getElementById("noteSelectAll").addEventListener("click", () => {
+  document.querySelectorAll("#notesList article[data-note-id]").forEach((art) => {
+    selectedNoteIds.add(art.dataset.noteId);
+    art.classList.add("picked");
+    const pick = art.querySelector("input.pick");
+    if (pick) pick.checked = true;
+  });
+  refreshMoveBar();
+});
+document.getElementById("noteSelectNone").addEventListener("click", () => {
+  selectedNoteIds.clear();
+  document.querySelectorAll("#notesList article.picked").forEach((art) => art.classList.remove("picked"));
+  document.querySelectorAll("#notesList input.pick").forEach((p) => { p.checked = false; });
+  refreshMoveBar();
+});
+document.getElementById("noteMoveGo").addEventListener("click", () => {
+  const inp = document.getElementById("noteMoveNew");
+  const v = inp ? String(inp.value || "").trim() : "";
+  if (!v) return;
+  moveSelectedToBox(v);
+});
+document.getElementById("noteMoveNew").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const v = String(e.target.value || "").trim();
+  if (!v) return;
+  moveSelectedToBox(v);
+});
+
 async function loadNotes() {
   const el = document.getElementById("notesList");
   const bar = document.getElementById("noteFilter");
@@ -1451,10 +1574,15 @@ async function loadNotes() {
   if (!notes.length) {
     el.className = "empty";
     el.textContent = boxFilter != null ? (boxFilter === "" ? "未分類冇筆記。" : "呢個盒冇筆記。") : (tagFilter ? "呢個 tag 冇筆記。" : "未有筆記。去傾倒貼一段文字。");
+    selectedNoteIds.clear();
+    refreshMoveBar();
     return;
   }
+  const visible = new Set(notes.map((n) => n.id));
+  [...selectedNoteIds].forEach((id) => { if (!visible.has(id)) selectedNoteIds.delete(id); });
   el.className = "";
   el.replaceChildren(...notes.map((n) => noteCard(n, true)));
+  refreshMoveBar();
   if (highlightId) {
     const hit = el.querySelector('[data-note-id="' + CSS.escape(highlightId) + '"]');
     if (hit) hit.scrollIntoView({ block: "center" });
