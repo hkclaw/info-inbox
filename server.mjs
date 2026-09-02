@@ -1611,8 +1611,13 @@ const server = http.createServer(async (req, res) => {
     }
     const hasText = Object.prototype.hasOwnProperty.call(payload, "text");
     const hasBox = Object.prototype.hasOwnProperty.call(payload, "box");
-    if (!hasText && !hasBox) {
+    const hasTags = Object.prototype.hasOwnProperty.call(payload, "tags");
+    if (!hasText && !hasBox && !hasTags) {
       json(res, 400, { error: "要有文字" });
+      return;
+    }
+    if (hasTags && !Array.isArray(payload.tags)) {
+      json(res, 400, { error: "tags 唔啱" });
       return;
     }
     const store = load();
@@ -1632,6 +1637,14 @@ const server = http.createServer(async (req, res) => {
     if (hasBox) {
       row.box = normalizeBox(payload.box);
       rememberBox(row.box);
+    }
+    if (hasTags) {
+      const tags = [];
+      payload.tags.forEach((x) => {
+        const s = String(x || "").trim();
+        if (s && !tags.includes(s)) tags.push(s);
+      });
+      row.tags = tags;
     }
     save(store);
     let embedded = false;

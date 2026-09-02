@@ -558,6 +558,13 @@
       background: var(--acc-soft);
       color: var(--acc);
     }
+    .tag-edit { display: inline-flex; align-items: center; margin: 0 6px 6px 0; }
+    .tag-edit .tag { margin: 0; border-radius: 999px 0 0 999px; }
+    .tag-x {
+      border: 0; background: var(--tag-bg); color: var(--tag-ink);
+      border-radius: 0 999px 999px 0; padding: 2px 8px; cursor: pointer; font: inherit; font-size: 12px;
+    }
+    .tag-x:hover { color: var(--danger); }
     .suggest {
       display: flex;
       flex-wrap: wrap;
@@ -1187,7 +1194,7 @@ function noteCard(n, withDelete) {
     sum.textContent = n.summary;
     art.appendChild(sum);
   }
-  if ((n.tags || []).length) art.appendChild(tags);
+  if (!withDelete && (n.tags || []).length) art.appendChild(tags);
   const pre = document.createElement("pre");
   pre.textContent = n.text || "";
   const fold = document.createElement("button");
@@ -1281,6 +1288,63 @@ function noteCard(n, withDelete) {
     });
     art.appendChild(ta);
     art.appendChild(saveRow);
+    async function patchNoteTags(next) {
+      err.hidden = true;
+      const r = await fetch("/api/notes/" + encodeURIComponent(n.id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tags: next }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        err.hidden = false;
+        err.textContent = data.error || "改唔到";
+        return;
+      }
+      loadNotes();
+    }
+    const tagRow = document.createElement("div");
+    (n.tags || []).forEach((t) => {
+      const wrap = document.createElement("span");
+      wrap.className = "tag-edit";
+      const s = document.createElement("button");
+      s.type = "button";
+      s.className = "tag" + (tagFilter === t ? " on" : "");
+      s.textContent = t;
+      s.addEventListener("click", () => {
+        setTagFilter(t);
+        showTab("notes");
+        loadNotes();
+      });
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "tag-x";
+      x.textContent = "×";
+      x.setAttribute("aria-label", "刪呢個 tag");
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        patchNoteTags((n.tags || []).filter((y) => y !== t));
+      });
+      wrap.appendChild(s);
+      wrap.appendChild(x);
+      tagRow.appendChild(wrap);
+    });
+    const addInp = document.createElement("input");
+    addInp.type = "text";
+    addInp.placeholder = "加 tag";
+    addInp.style.maxWidth = "120px";
+    addInp.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const v = String(addInp.value || "").trim();
+      if (!v) return;
+      const next = (n.tags || []).slice();
+      if (!next.includes(v)) next.push(v);
+      patchNoteTags(next);
+    });
+    tagRow.appendChild(addInp);
+    art.insertBefore(tagRow, fold);
+
     async function patchNoteBox(box) {
       err.hidden = true;
       const r = await fetch("/api/notes/" + encodeURIComponent(n.id), {
