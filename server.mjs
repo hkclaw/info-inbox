@@ -1945,6 +1945,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "POST" && u.pathname === "/api/questions/clear-closed") {
+    const store = load();
+    const before = store.questions || [];
+    const keep = before.filter((q) => (q.status || "open") === "open");
+    const cleared = before.length - keep.length;
+    if (!cleared) {
+      json(res, 200, { ok: true, cleared: 0, hint: "冇已關閉問題" });
+      return;
+    }
+    store.questions = keep;
+    save(store);
+    json(res, 200, { ok: true, cleared });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/merge-suggestions") {
     const store = load();
     json(res, 200, { suggestions: suggestMerges(store) });
