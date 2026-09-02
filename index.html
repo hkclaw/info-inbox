@@ -529,6 +529,19 @@
       line-height: 1.6;
       color: var(--text-2);
     }
+    .sum-edit {
+      display: block;
+      width: 100%;
+      font-weight: 600;
+      font-size: 16px;
+      line-height: 1.45;
+      margin: 0 0 10px;
+      padding: 4px 0;
+      border: 0;
+      border-bottom: 1px solid var(--hairline);
+      background: transparent;
+      color: var(--text-1);
+    }
     .sum {
       font-weight: 600;
       margin: 0 0 10px;
@@ -1188,7 +1201,7 @@ function noteCard(n, withDelete) {
     wait.textContent = "分類中…";
     art.appendChild(wait);
   }
-  if (n.summary) {
+  if (!withDelete && n.summary) {
     const sum = document.createElement("div");
     sum.className = "sum";
     sum.textContent = n.summary;
@@ -1288,6 +1301,37 @@ function noteCard(n, withDelete) {
     });
     art.appendChild(ta);
     art.appendChild(saveRow);
+    async function patchNoteSummary(summary) {
+      err.hidden = true;
+      const r = await fetch("/api/notes/" + encodeURIComponent(n.id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ summary }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        err.hidden = false;
+        err.textContent = data.error || "改唔到";
+        return;
+      }
+      loadNotes();
+    }
+    const sumInp = document.createElement("input");
+    sumInp.type = "text";
+    sumInp.className = "sum-edit";
+    sumInp.value = n.summary || "";
+    sumInp.placeholder = "一行摘要";
+    sumInp.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      patchNoteSummary(sumInp.value);
+    });
+    sumInp.addEventListener("blur", () => {
+      if (String(sumInp.value || "") === String(n.summary || "")) return;
+      patchNoteSummary(sumInp.value);
+    });
+    art.insertBefore(sumInp, fold);
+
     async function patchNoteTags(next) {
       err.hidden = true;
       const r = await fetch("/api/notes/" + encodeURIComponent(n.id), {

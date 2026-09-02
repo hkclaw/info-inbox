@@ -1612,7 +1612,8 @@ const server = http.createServer(async (req, res) => {
     const hasText = Object.prototype.hasOwnProperty.call(payload, "text");
     const hasBox = Object.prototype.hasOwnProperty.call(payload, "box");
     const hasTags = Object.prototype.hasOwnProperty.call(payload, "tags");
-    if (!hasText && !hasBox && !hasTags) {
+    const hasSummary = Object.prototype.hasOwnProperty.call(payload, "summary");
+    if (!hasText && !hasBox && !hasTags && !hasSummary) {
       json(res, 400, { error: "要有文字" });
       return;
     }
@@ -1645,6 +1646,14 @@ const server = http.createServer(async (req, res) => {
         if (s && !tags.includes(s)) tags.push(s);
       });
       row.tags = tags;
+    }
+    if (hasSummary) {
+      if (payload.summary != null && typeof payload.summary !== "string") {
+        json(res, 400, { error: "摘要唔啱" });
+        return;
+      }
+      const s = String(payload.summary || "").replace(/\n+/g, " ").trim();
+      row.summary = s || null;
     }
     save(store);
     let embedded = false;
