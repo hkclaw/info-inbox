@@ -739,6 +739,8 @@
           <button type="button" class="dim" id="noteMoveGo">搬去</button>
           <input id="noteTagAdd" placeholder="加 tag" autocomplete="off" style="max-width:120px">
           <button type="button" class="dim" id="noteTagSel">加 tag 去選中</button>
+          <input id="noteTagRm" placeholder="移除 tag" autocomplete="off" style="max-width:120px">
+          <button type="button" class="dim" id="noteTagRmSel">移除 tag 去選中</button>
           <button type="button" class="dim" id="noteMergeSel">合併選中</button>
           <button type="button" class="del" id="noteDeleteSel">刪除選中</button>
           <span class="err" id="noteMoveErr" hidden></span>
@@ -1734,6 +1736,56 @@ document.getElementById("noteTagAdd").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   e.preventDefault();
   addTagToSelected();
+});
+async function removeTagFromSelected() {
+  const err = document.getElementById("noteMoveErr");
+  if (err) err.hidden = true;
+  const inp = document.getElementById("noteTagRm");
+  const tag = inp ? String(inp.value || "").trim() : "";
+  const ids = [...selectedNoteIds];
+  if (!ids.length || !tag) return;
+  let notes = [];
+  try {
+    const r = await fetch("/api/notes");
+    const data = await r.json().catch(() => ({}));
+    notes = data.notes || [];
+  } catch {
+    if (err) { err.hidden = false; err.textContent = "移除唔到"; }
+    return;
+  }
+  const byId = {};
+  notes.forEach((n) => { byId[n.id] = n; });
+  const fails = [];
+  for (const id of ids) {
+    const n = byId[id];
+    if (!n) continue;
+    const cur = Array.isArray(n.tags) ? n.tags.slice() : [];
+    if (!cur.includes(tag)) continue;
+    const next = cur.filter((x) => x !== tag);
+    try {
+      const r = await fetch("/api/notes/" + encodeURIComponent(id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tags: next }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) fails.push(data.error || "移除唔到");
+      else n.tags = next;
+    } catch {
+      fails.push("移除唔到");
+    }
+  }
+  await loadNotes();
+  if (fails.length && err) {
+    err.hidden = false;
+    err.textContent = fails[0] + (fails.length > 1 ? ("（另 " + (fails.length - 1) + " 條）") : "");
+  }
+}
+document.getElementById("noteTagRmSel").addEventListener("click", () => removeTagFromSelected());
+document.getElementById("noteTagRm").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  removeTagFromSelected();
 });
 
 document.getElementById("noteMergeSel").addEventListener("click", async () => {
