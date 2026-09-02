@@ -521,13 +521,35 @@
       font-size: 12px;
       margin-bottom: 8px;
     }
+    article {
+      overflow-x: hidden;
+    }
     article pre {
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      max-width: 100%;
       margin: 10px 0 0;
       font: inherit;
       font-size: 14px;
       line-height: 1.6;
       color: var(--text-2);
+    }
+    article pre.body-clamp {
+      max-height: 280px;
+      overflow: hidden;
+      -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent);
+      mask-image: linear-gradient(to bottom, #000 72%, transparent);
+    }
+    article pre.body-open {
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    article textarea {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      max-width: 100%;
     }
     .sum-edit {
       display: block;
@@ -1233,15 +1255,35 @@ function noteCard(n, withDelete) {
   const fold = document.createElement("button");
   fold.type = "button";
   fold.className = "fold";
+  fold.hidden = true;
   const openBody = !!(highlightId && n.id === highlightId);
-  pre.hidden = !openBody;
-  fold.textContent = openBody ? "收起正文" : "睇正文";
+  function setBodyOpen(open) {
+    if (open) {
+      pre.classList.add("body-open");
+      pre.classList.remove("body-clamp");
+      fold.textContent = "收埋";
+    } else {
+      pre.classList.add("body-clamp");
+      pre.classList.remove("body-open");
+      fold.textContent = "展開全文";
+    }
+  }
   fold.addEventListener("click", () => {
-    pre.hidden = !pre.hidden;
-    fold.textContent = pre.hidden ? "睇正文" : "收起正文";
+    setBodyOpen(!pre.classList.contains("body-open"));
   });
-  art.appendChild(fold);
   art.appendChild(pre);
+  art.appendChild(fold);
+  requestAnimationFrame(() => {
+    if (pre.hidden) return;
+    const long = pre.scrollHeight > 288;
+    if (!long) {
+      pre.classList.remove("body-clamp", "body-open");
+      fold.hidden = true;
+      return;
+    }
+    fold.hidden = false;
+    setBodyOpen(openBody);
+  });
   if (withDelete) {
     const row = document.createElement("div");
     row.className = "row";
@@ -1294,11 +1336,18 @@ function noteCard(n, withDelete) {
       saveRow.hidden = true;
       pre.hidden = false;
       edit.hidden = false;
+      requestAnimationFrame(() => {
+        const long = pre.scrollHeight > 288;
+        fold.hidden = !long;
+        if (long) setBodyOpen(pre.classList.contains("body-open") || openBody);
+        else pre.classList.remove("body-clamp", "body-open");
+      });
     }
     edit.addEventListener("click", () => {
       err.hidden = true;
       ta.value = n.text || "";
       pre.hidden = true;
+      fold.hidden = true;
       ta.hidden = false;
       saveRow.hidden = false;
       edit.hidden = true;
