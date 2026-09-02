@@ -737,6 +737,8 @@
           <span class="move-chips" id="noteMoveChips"></span>
           <input id="noteMoveNew" placeholder="新盒名" autocomplete="off" style="max-width:120px">
           <button type="button" class="dim" id="noteMoveGo">搬去</button>
+          <input id="noteTagAdd" placeholder="加 tag" autocomplete="off" style="max-width:120px">
+          <button type="button" class="dim" id="noteTagSel">加 tag 去選中</button>
           <button type="button" class="dim" id="noteMergeSel">合併選中</button>
           <button type="button" class="del" id="noteDeleteSel">刪除選中</button>
           <span class="err" id="noteMoveErr" hidden></span>
@@ -1683,6 +1685,57 @@ document.getElementById("noteMoveNew").addEventListener("keydown", (e) => {
   if (!v) return;
   moveSelectedToBox(v);
 });
+async function addTagToSelected() {
+  const err = document.getElementById("noteMoveErr");
+  if (err) err.hidden = true;
+  const inp = document.getElementById("noteTagAdd");
+  const tag = inp ? String(inp.value || "").trim() : "";
+  const ids = [...selectedNoteIds];
+  if (!ids.length || !tag) return;
+  let notes = [];
+  try {
+    const r = await fetch("/api/notes");
+    const data = await r.json().catch(() => ({}));
+    notes = data.notes || [];
+  } catch {
+    if (err) { err.hidden = false; err.textContent = "加唔到"; }
+    return;
+  }
+  const byId = {};
+  notes.forEach((n) => { byId[n.id] = n; });
+  const fails = [];
+  for (const id of ids) {
+    const n = byId[id];
+    if (!n) continue;
+    const cur = Array.isArray(n.tags) ? n.tags.slice() : [];
+    if (cur.includes(tag)) continue;
+    cur.push(tag);
+    try {
+      const r = await fetch("/api/notes/" + encodeURIComponent(id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tags: cur }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) fails.push(data.error || "加唔到");
+      else n.tags = cur;
+    } catch {
+      fails.push("加唔到");
+    }
+  }
+  await loadNotes();
+  if (fails.length && err) {
+    err.hidden = false;
+    err.textContent = fails[0] + (fails.length > 1 ? ("（另 " + (fails.length - 1) + " 條）") : "");
+  }
+}
+document.getElementById("noteTagSel").addEventListener("click", () => addTagToSelected());
+document.getElementById("noteTagAdd").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  addTagToSelected();
+});
+
 document.getElementById("noteMergeSel").addEventListener("click", async () => {
   const err = document.getElementById("noteMoveErr");
   if (err) err.hidden = true;
