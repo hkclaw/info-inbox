@@ -729,6 +729,12 @@
           <span class="err box-manage-err" hidden></span>
         </p>
         <p class="row" id="reclassRow"><button type="button" class="dim" id="reclassMissing">重新分類未分類</button></p>
+        <p class="row" id="tagRename">
+          <input id="tagRenameFrom" placeholder="現時 tag" autocomplete="off" style="max-width:120px">
+          <input id="tagRenameTo" placeholder="新 tag 名" autocomplete="off" style="max-width:120px">
+          <button type="button" class="dim" id="tagRenameGo">改名呢個 tag</button>
+          <span class="err" id="tagRenameErr" hidden></span>
+        </p>
         <p class="row" id="noteMove" hidden>
           <button type="button" class="dim" id="noteSelectAll">全選可見</button>
           <button type="button" class="dim" id="noteSelectNone">取消</button>
@@ -1120,6 +1126,8 @@ function setTagFilter(tag) {
   if (tagFilter) {
     bar.hidden = false;
     lab.textContent = "篩選：" + tagFilter;
+    const fromInp = document.getElementById("tagRenameFrom");
+    if (fromInp) fromInp.value = tagFilter;
   } else {
     bar.hidden = true;
     lab.textContent = "";
@@ -3017,6 +3025,61 @@ document.getElementById("backup").addEventListener("click", () => {
 document.getElementById("exportBox").addEventListener("click", () => {
   if (boxFilter == null) return;
   downloadExport("/api/export?box=" + encodeURIComponent(boxFilter), "info-inbox-box.json");
+});
+
+async function renameTag(fromRaw, toRaw) {
+  const err = document.getElementById("tagRenameErr");
+  if (err) err.hidden = true;
+  const from = String(fromRaw || "").trim();
+  const to = String(toRaw || "").trim();
+  if (!from || !to) {
+    if (err) { err.hidden = false; err.textContent = "要有 tag"; }
+    return;
+  }
+  if (from === to) {
+    if (err) { err.hidden = false; err.textContent = "tag 冇變"; }
+    return;
+  }
+  let res, data;
+  try {
+    res = await fetch("/api/tags/rename", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ from, to }),
+    });
+    data = await res.json().catch(() => ({}));
+  } catch {
+    if (err) { err.hidden = false; err.textContent = "改唔到"; }
+    return;
+  }
+  if (!res.ok) {
+    if (err) { err.hidden = false; err.textContent = data.error || "改唔到"; }
+    return;
+  }
+  if (tagFilter === from) setTagFilter(to);
+  const toInp = document.getElementById("tagRenameTo");
+  if (toInp) toInp.value = "";
+  await loadNotes();
+  replaySearch();
+  if (document.getElementById("graph") && document.getElementById("graph").classList.contains("on")) loadGraph();
+}
+document.getElementById("tagRenameGo").addEventListener("click", () => {
+  renameTag(
+    document.getElementById("tagRenameFrom") && document.getElementById("tagRenameFrom").value,
+    document.getElementById("tagRenameTo") && document.getElementById("tagRenameTo").value
+  );
+});
+["tagRenameFrom", "tagRenameTo"].forEach((id) => {
+  const inp = document.getElementById(id);
+  if (!inp) return;
+  inp.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    renameTag(
+      document.getElementById("tagRenameFrom") && document.getElementById("tagRenameFrom").value,
+      document.getElementById("tagRenameTo") && document.getElementById("tagRenameTo").value
+    );
+  });
 });
 
 document.querySelectorAll(".box-manage").forEach((row) => {

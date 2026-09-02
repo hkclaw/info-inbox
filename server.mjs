@@ -1343,6 +1343,42 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "POST" && u.pathname === "/api/tags/rename") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const from = String(payload.from || "").trim();
+    const to = String(payload.to || "").trim();
+    if (!from || !to) {
+      json(res, 400, { error: "要有 tag" });
+      return;
+    }
+    if (from === to) {
+      json(res, 400, { error: "tag 冇變" });
+      return;
+    }
+    const store = load();
+    let renamed = 0;
+    store.notes.forEach((n) => {
+      const tags = Array.isArray(n.tags) ? n.tags : [];
+      if (!tags.includes(from)) return;
+      const next = [];
+      tags.forEach((t) => {
+        const s = t === from ? to : t;
+        if (s && !next.includes(s)) next.push(s);
+      });
+      n.tags = next;
+      renamed += 1;
+    });
+    if (renamed) save(store);
+    json(res, 200, { ok: true, from, to, renamed });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/models") {
     const listed = await listOllamaModels();
     if (!listed.ok) {
