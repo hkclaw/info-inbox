@@ -716,6 +716,7 @@
           <span class="move-chips" id="noteMoveChips"></span>
           <input id="noteMoveNew" placeholder="新盒名" autocomplete="off" style="max-width:120px">
           <button type="button" class="dim" id="noteMoveGo">搬去</button>
+          <button type="button" class="del" id="noteDeleteSel">刪除選中</button>
           <span class="err" id="noteMoveErr" hidden></span>
         </p>
         <div id="notesList" class="empty">未有筆記。去傾倒貼一段文字。</div>
@@ -1550,6 +1551,32 @@ document.getElementById("noteMoveNew").addEventListener("keydown", (e) => {
   const v = String(e.target.value || "").trim();
   if (!v) return;
   moveSelectedToBox(v);
+});
+document.getElementById("noteDeleteSel").addEventListener("click", async () => {
+  const err = document.getElementById("noteMoveErr");
+  if (err) err.hidden = true;
+  const ids = [...selectedNoteIds];
+  if (!ids.length) return;
+  if (!confirm("呢個會刪晒已選 " + ids.length + " 條筆記。確認刪除？")) return;
+  const fails = [];
+  for (const id of ids) {
+    try {
+      const r = await fetch("/api/notes/" + encodeURIComponent(id), { method: "DELETE" });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) fails.push(data.error || "刪唔到");
+    } catch {
+      fails.push("刪唔到");
+    }
+  }
+  selectedNoteIds.clear();
+  await refreshBoxes();
+  await loadNotes();
+  refreshDumpOnboard();
+  refreshPendingBadge();
+  if (fails.length && err) {
+    err.hidden = false;
+    err.textContent = fails[0] + (fails.length > 1 ? ("（另 " + (fails.length - 1) + " 條）") : "");
+  }
 });
 
 async function loadNotes() {
