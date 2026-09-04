@@ -53,6 +53,11 @@ async function createWindow() {
   });
   win.once("ready-to-show", () => win.show());
   win.loadURL("http://" + BIND + ":" + PORT + "/");
+  // Keep folder/file drops on Dump; don't navigate the window to file://.
+  win.webContents.on("will-navigate", (event, url) => {
+    const ok = "http://" + BIND + ":" + PORT;
+    if (!url.startsWith(ok)) event.preventDefault();
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };

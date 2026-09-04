@@ -2700,13 +2700,16 @@ function renderStaged() {
 }
 
 function stageFiles(fileList) {
-  const files = [...(fileList || [])].filter(Boolean);
-  if (!files.length) return;
-  for (const file of files) {
+  const items = [...(fileList || [])].filter(Boolean);
+  if (!items.length) return;
+  for (const item of items) {
+    const file = item instanceof File ? item : item.file;
+    if (!file) continue;
+    const name = (item && item.displayName) || file.name || "file";
     stagedFiles.push({
       id: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8),
       file,
-      name: file.name || "file",
+      name,
       bytes: file.size || 0,
       fileModifiedAt: file.lastModified ? new Date(file.lastModified).toISOString() : null,
       status: "ready",
@@ -2715,6 +2718,78 @@ function stageFiles(fileList) {
   }
   renderStaged();
 }
+
+  /** Recursively collect files from DataTransfer (folders via webkitGetAsEntry). */
+  async function collectFilesFromDataTransfer(dt) {
+    const empty = { files: [], sawDir: false };
+    if (!dt) return empty;
+    const items = dt.items;
+    const out = [];
+    let sawDir = false;
+    if (!items || !items.length) {
+      return {
+        files: [...(dt.files || [])].map((f) => ({ file: f, displayName: f.name })),
+        sawDir: false,
+      };
+    }
+    const entries = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind !== "file") continue;
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+      if (entry) entries.push(entry);
+      else {
+        const f = item.getAsFile && item.getAsFile();
+        if (f) out.push({ file: f, displayName: f.name });
+      }
+    }
+    if (!entries.length) {
+      if (out.length) return { files: out, sawDir: false };
+      return {
+        files: [...(dt.files || [])].map((f) => ({ file: f, displayName: f.name })),
+        sawDir: false,
+      };
+    }
+    function readAllEntries(reader) {
+      return new Promise((resolve, reject) => {
+        const acc = [];
+        const pump = () => {
+          reader.readEntries(
+            (batch) => {
+              if (!batch.length) resolve(acc);
+              else {
+                acc.push(...batch);
+                pump();
+              }
+            },
+            reject
+          );
+        };
+        pump();
+      });
+    }
+    async function walk(entry, pathPrefix) {
+      if (entry.isFile) {
+        const file = await new Promise((res, rej) => entry.file(res, rej));
+        const displayName = pathPrefix ? pathPrefix + "/" + file.name : file.name;
+        out.push({ file, displayName });
+        return;
+      }
+      if (entry.isDirectory) {
+        sawDir = true;
+        const reader = entry.createReader();
+        const children = await readAllEntries(reader);
+        const nextPrefix = pathPrefix ? pathPrefix + "/" + entry.name : entry.name;
+        for (const child of children) {
+          await walk(child, nextPrefix);
+        }
+      }
+    }
+    for (const e of entries) {
+      await walk(e, "");
+    }
+    return { files: out, sawDir };
+  }
 
 let dumpToastTimer = null;
 function showDumpToast(text) {
@@ -2781,9 +2856,11 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
   const dupEl = document.getElementById("dumpDup");
   const results = [];
   let confirmNext = !!confirmDup;
+  const totalFiles = stagedFiles.length;
   for (let i = Math.max(0, fromIndex | 0); i < stagedFiles.length; i++) {
     const row = stagedFiles[i];
     const file = row.file;
+    setDumpWaitCtx({ total: totalFiles, index: i + 1, step: "抽出" });
     row.status = "extracting";
     row.failReason = "";
     renderStaged();
@@ -2793,6 +2870,7 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
     const late = setTimeout(() => {
       if (pipe.stage === "extract") {
         pipe.stage = "classify";
+        setDumpWaitCtx({ step: "分類中" });
         renderPipe();
       }
     }, 600);
@@ -2845,23 +2923,41 @@ async function ingestStagedFiles(fromIndex, confirmDup) {
 
 const WAIT_LINES = ["慢慢嚟…", "諗緊佢…", "睇緊嗰段…", "對齊字眼…", "等佢答你…"];
 let dumpWaitTimers = [];
-function startDumpWait() {
+let dumpWaitCtx = { total: 0, index: 0, step: "" };
+function setDumpWaitCtx(partial) {
+  Object.assign(dumpWaitCtx, partial || {});
+}
+function formatDumpWaitTime(secs) {
+  const step = dumpWaitCtx.step || "分類中";
+  if (dumpWaitCtx.total > 1 && dumpWaitCtx.index > 0) {
+    return "第 " + dumpWaitCtx.index + "／共 " + dumpWaitCtx.total + " · " + step + " · 已等 " + secs + " 秒";
+  }
+  return step + " · 已等 " + secs + " 秒";
+}
+function startDumpWait(ctx) {
   const box = document.getElementById("dumpWait");
   const timeEl = document.getElementById("dumpWaitTime");
   const lineEl = document.getElementById("dumpWaitLine");
   if (!box) return;
+  dumpWaitCtx = Object.assign({ total: 0, index: 0, step: "" }, ctx || {});
   dumpWaitTimers.forEach(clearInterval);
   dumpWaitTimers = [];
   box.hidden = false;
   const t0 = Date.now();
   let i = 0;
-  timeEl.textContent = "分類中 · 已等 0 秒";
-  lineEl.textContent = WAIT_LINES[0];
+  timeEl.textContent = formatDumpWaitTime(0);
+  // short waits stay quiet — comfort lines only after 3s
+  lineEl.textContent = "";
   dumpWaitTimers.push(setInterval(() => {
     const secs = Math.floor((Date.now() - t0) / 1000);
-    timeEl.textContent = "分類中 · 已等 " + secs + " 秒";
+    timeEl.textContent = formatDumpWaitTime(secs);
+    if (secs >= 3 && !lineEl.textContent) {
+      lineEl.textContent = WAIT_LINES[0];
+    }
   }, 250));
   dumpWaitTimers.push(setInterval(() => {
+    const secs = Math.floor((Date.now() - t0) / 1000);
+    if (secs < 3) return;
     i = (i + 1) % WAIT_LINES.length;
     lineEl.textContent = WAIT_LINES[i];
   }, 2200));
@@ -2885,7 +2981,11 @@ async function dumpSave(confirmDup) {
   go.classList.add("busy");
   dumpPipeItems = [];
   renderPipe();
-  startDumpWait();
+  startDumpWait({
+    total: stagedFiles.length,
+    index: stagedFiles.length ? 1 : 0,
+    step: stagedFiles.length ? "抽出" : "分類中",
+  });
   try {
 
   const hasStaged = stagedFiles.length > 0;
@@ -2993,13 +3093,34 @@ dumpPaper.addEventListener("dragleave", (e) => {
   dragDepth = Math.max(0, dragDepth - 1);
   if (!dragDepth) dumpPaper.classList.remove("drag");
 });
-dumpPaper.addEventListener("drop", (e) => {
+dumpPaper.addEventListener("drop", async (e) => {
   e.preventDefault();
   e.stopPropagation();
   dragDepth = 0;
   dumpPaper.classList.remove("drag");
-  const list = e.dataTransfer && e.dataTransfer.files;
-  if (list && list.length) stageFiles(list);
+  if (!e.dataTransfer) return;
+  let collected;
+  try {
+    collected = await collectFilesFromDataTransfer(e.dataTransfer);
+  } catch (err) {
+    const fallback = e.dataTransfer.files;
+    if (fallback && fallback.length) stageFiles(fallback);
+    return;
+  }
+  const list = collected.files || [];
+  if (!list.length) {
+    const msg = document.getElementById("dumpMsg");
+    if (msg) {
+      msg.hidden = false;
+      msg.classList.remove("ok");
+      msg.classList.add("err");
+      msg.textContent = collected.sawDir
+        ? "資料夾係空嘅，入面冇可用嘅檔案。"
+        : "未有檔案可以加入。";
+    }
+    return;
+  }
+  stageFiles(list);
 });
 
 
