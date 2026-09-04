@@ -12,6 +12,12 @@ Need Node 18+.
 
 Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1 only. Do not publish this to the public internet. The UI shell is a notes-app layout (sidebar + editor), not a form dashboard.
 
+macOS app window (thin Electron shell; same Express server, same copper UI):
+
+    npm i && npm run electron
+
+Opens a Mac window to http://127.0.0.1:3741/. Inbox JSON lives under Electron userData `data/` (or set `INFO_INBOX_DATA`). Still talks to local Ollama at 127.0.0.1:11434. Does not bundle Ollama. Browser `npm start` still works with repo `data/`.
+
 Empty Dump shows three short steps (paste/drop → local Ollama → Pending when vague) and says data stays on this machine with no cloud; when Ollama is up it shows ready plus the selected model, when down the existing serve/pull hints stay. The block hides once any note exists and never blocks paste, multi-file drop, or 存入.
 
 ## V1 (today)

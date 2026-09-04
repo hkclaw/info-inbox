@@ -13,7 +13,9 @@ const WordExtractor = require("word-extractor");
 const root = path.dirname(fileURLToPath(import.meta.url));
 const BIND = process.env.BIND || "127.0.0.1";
 const PORT = Number(process.env.PORT || 3741);
-const dataDir = path.join(root, "data");
+const dataDir = process.env.INFO_INBOX_DATA
+  ? path.resolve(process.env.INFO_INBOX_DATA)
+  : path.join(root, "data");
 const storeFile = path.join(dataDir, "inbox.json");
 const modelFile = path.join(dataDir, "ollama-model.json");
 const boxFile = path.join(dataDir, "current-box.json");
