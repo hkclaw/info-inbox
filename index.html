@@ -6,24 +6,26 @@
   <title>入盒 (Hap)</title>
   <style>
     :root {
-      color-scheme: dark;
-      --canvas: #1A1714;
-      --surface: #221E1A;
-      --elevated: #2B2620;
-      --hairline: #3A332B;
-      --text-1: #ECE3D2;
-      --text-2: #B8AB94;
-      --text-3: #8A7E6A;
-      --acc: #c98f63;
-      --acc-hover: #d9a679;
-      --acc-pressed: #b87f55;
-      --acc-ink: #1A1714;
-      --acc-soft: rgba(201, 143, 99, 0.14);
-      --danger: #C97A6A;
-      --paper: #F4ECD8;
-      --paper-ink: #2A241C;
-      --tag-bg: #332C24;
-      --tag-ink: #D9CFB8;
+      color-scheme: light;
+      --canvas: #ffffff;
+      --surface: #f7f6f3;
+      --elevated: #efefed;
+      --hairline: rgba(55, 53, 47, 0.09);
+      --text-1: #37352f;
+      --text-2: #787774;
+      --text-3: #9b9a97;
+      --acc: #2383e2;
+      --acc-hover: #1b6ec2;
+      --acc-pressed: #165a9e;
+      --acc-ink: #ffffff;
+      --acc-soft: rgba(35, 131, 226, 0.12);
+      --danger: #e03e3e;
+      --warn: #d9730d;
+      --ok: #0f7b6c;
+      --paper: #ffffff;
+      --paper-ink: #37352f;
+      --tag-bg: #f1f1ef;
+      --tag-ink: #37352f;
       --sidebar-w: 168px;
       --measure: 760px;
       --header-h: 56px;
@@ -207,8 +209,8 @@
       flex-direction: column;
       background: var(--paper);
       color: var(--paper-ink);
-      border: 0;
-      border-radius: 12px;
+      border: 1px solid var(--hairline);
+      border-radius: 4px;
       padding: 24px;
       min-height: 60vh;
       position: relative;
@@ -297,7 +299,7 @@
     .box-manage { align-items: center; gap: 8px; flex-wrap: wrap; }
     .box-manage input { max-width: 160px; padding: 5px 8px; }
 
-    .box-name { color: #c98f63; }
+    .box-name { color: var(--text-1); }
 
     #dump .paper-foot .ollama-setup {
       flex: 1 1 100%;
@@ -382,7 +384,7 @@
     }
     #dump .pipe .st-status { font-size: 12px; color: color-mix(in srgb, var(--paper-ink) 62%, transparent); }
     #dump .pipe .st-status.failed { color: var(--danger, #c97a6a); }
-    #dump .pipe .st-status.ok { color: #c98f63; }
+    #dump .pipe .st-status.ok { color: var(--ok); }
 
     #ollamaLive {
       margin: 0;
@@ -394,7 +396,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    #ollamaLive.down { color: #c98f63; }
+    #ollamaLive.down { color: var(--warn); }
     .backup { display: block; width: 100%; text-align: left; border: 0; }
     .busy { opacity: 0.65; cursor: wait; }
     .card-status { font-size: 13px; color: var(--text-3); margin: 4px 0 0; }
@@ -405,7 +407,7 @@
       min-height: 2.6em;
     }
     .dump-wait span { display: block; }
-    .dump-wait #dumpWaitTime { color: #c98f63; }
+    .dump-wait #dumpWaitTime { color: var(--warn); }
     #dump .staged .staged-meta span {
       opacity: 0.85;
     }
@@ -455,7 +457,7 @@
     }
     button.del { color: var(--danger); }
     button.del:hover {
-      background: rgba(201, 122, 106, 0.12);
+      background: rgba(224, 62, 62, 0.1);
       color: var(--danger);
     }
     button.fold {
@@ -476,7 +478,7 @@
       line-height: 1.6;
     }
     .err {
-      color: var(--acc);
+      color: var(--danger);
       margin: 12px 0 0;
       font-size: 13px;
     }
@@ -644,21 +646,21 @@
 
     #graphTags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
     #graphTags button {
-      background: var(--surface); color: var(--acc); border: 1px solid var(--hairline);
+      background: var(--tag-bg); color: var(--text-1); border: 0;
       border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer;
     }
-    #graphTags button.active { background: var(--acc); color: var(--acc-ink, #1a1714); }
+    #graphTags button.active { background: var(--acc-soft); color: var(--acc); }
     #graphCanvas {
       display: block; width: 100%; height: min(70vh, 560px);
-      background: var(--bg-deep, #1b1a18); border: 1px solid var(--hairline);
-      border-radius: 12px; cursor: grab; touch-action: none;
+      background: var(--canvas); border: 1px solid var(--hairline);
+      border-radius: 4px; cursor: grab; touch-action: none;
     }
     #graphCanvas:active { cursor: grabbing; }
     #graphTip {
       position: fixed; pointer-events: none; display: none; z-index: 20;
       max-width: 260px; padding: 6px 8px; border-radius: 8px; font-size: 12px;
-      background: var(--elevated, #2b2620); color: var(--text-1, #ece3d2);
-      border: 1px solid var(--acc);
+      background: var(--canvas); color: var(--text-1);
+      border: 1px solid var(--hairline);
     }
     #graphEmpty { color: var(--text-3); padding: 36px 8px; }
     @media (max-width: 720px) {
@@ -2387,15 +2389,15 @@ function graphDraw() {
     ctx.lineTo(nb.x, nb.y);
     if (e.kind === "pending") {
       ctx.setLineDash([5, 4]);
-      ctx.strokeStyle = "rgba(201,143,99,0.28)";
+      ctx.strokeStyle = "rgba(55,53,47,0.28)";
       ctx.lineWidth = 1.25;
     } else if (e.kind === "merge") {
       ctx.setLineDash([]);
-      ctx.strokeStyle = "rgba(201,143,99,0.55)";
+      ctx.strokeStyle = "rgba(35,131,226,0.7)";
       ctx.lineWidth = 1.5;
     } else {
       ctx.setLineDash([]);
-      ctx.strokeStyle = "rgba(201,143,99,0.22)";
+      ctx.strokeStyle = "rgba(55,53,47,0.16)";
       ctx.lineWidth = 1.25;
     }
     ctx.stroke();
@@ -2410,10 +2412,10 @@ function graphDraw() {
     ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
     ctx.fillStyle = "transparent";
     ctx.fill();
-    ctx.strokeStyle = dim ? "rgba(201,143,99,0.28)" : "#c98f63";
+    ctx.strokeStyle = dim ? "rgba(55,53,47,0.22)" : "#37352f";
     ctx.lineWidth = Math.max(1.25, n.kind === "tag" ? 1.25 : 1.5);
     ctx.stroke();
-    ctx.fillStyle = dim ? "rgba(232,226,214,0.35)" : "#e8e2d6";
+    ctx.fillStyle = dim ? "rgba(55,53,47,0.35)" : "#37352f";
     ctx.font = (n.kind === "tag" ? "10px " : "11px ") + "system-ui,sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
