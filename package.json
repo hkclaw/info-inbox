@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "electron": "electron ."
+    "electron": "electron .",
+    "test": "node --test llm.test.mjs llm.integration.test.mjs"
   },
   "dependencies": {
     "mammoth": "^1.12.2",

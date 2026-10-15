@@ -283,6 +283,22 @@
       font: inherit;
       font-size: 13px;
     }
+    #dump .paper-foot .owui-fields[hidden] { display: none; }
+    #dump .paper-foot .owui-fields {
+      flex: 1 1 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #dump .paper-foot .owui-fields .model-pick input {
+      width: 220px;
+      max-width: 280px;
+    }
+    #dump .paper-foot .owui-fields .model-pick input[type="password"] {
+      width: 140px;
+      max-width: 180px;
+    }
     #boxChips { flex-wrap: wrap; gap: 6px; }
     .box-manage { align-items: center; gap: 8px; flex-wrap: wrap; }
     .box-manage input { max-width: 160px; padding: 5px 8px; }
@@ -680,7 +696,7 @@
       <button type="button" data-tab="graph"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='6' cy='6' r='2'/><circle cx='18' cy='6' r='2'/><circle cx='12' cy='18' r='2'/><path d='M6 8v2a4 4 0 0 0 4 4'/><path d='M18 8v2a4 4 0 0 1-4 4'/></svg>圖譜</button>
     </nav>
     <div class="sidebar-foot">
-      <p class="hint">本機 inbox。資料只存呢部機。分類用本機 Ollama。</p>
+      <p class="hint">本機 inbox。資料只存呢部機。分類用 Ollama 或 Open WebUI。</p>
     </div>
   </aside>
   <div class="workspace">
@@ -704,7 +720,7 @@
           <div class="ob-title">點用</div>
           <ol>
             <li>貼亂筆記／拖檔</li>
-            <li>本機 Ollama 分類</li>
+            <li id="dumpOnboardModel">本機 Ollama 分類</li>
             <li>含糊就去「待答」澄清</li>
           </ol>
           <p class="local-note">資料只留呢部機。無 cloud。</p>
@@ -724,7 +740,23 @@
               <label class="model-pick">模型
                 <select id="ollamaModel" disabled aria-label="Ollama model"></select>
               </label>
+              <label class="model-pick">後端
+                <select id="llmBackend" aria-label="model backend">
+                  <option value="ollama">Ollama</option>
+                  <option value="openwebui">Open WebUI</option>
+                </select>
+              </label>
             </div>
+            <div id="owuiFields" class="owui-fields" hidden>
+              <label class="model-pick">網址
+                <input id="owuiUrl" type="text" placeholder="http://127.0.0.1:8080" autocomplete="off" spellcheck="false" aria-label="Open WebUI URL">
+              </label>
+              <label class="model-pick">API key
+                <input id="owuiKey" type="password" placeholder="API key" autocomplete="off" aria-label="Open WebUI API key">
+              </label>
+              <button type="button" class="dim" id="owuiSave">儲存</button>
+            </div>
+            <p id="owuiErr" class="ollama-setup" hidden></p>
             <button class="go" type="button" id="dumpGo">存入</button>
             <p id="ollamaSetup" class="ollama-setup" hidden>
               Ollama 未開（127.0.0.1:11434）。本機跑 <code>ollama serve</code>，再 <code>ollama pull <span id="ollamaSetupModel">llama3.2</span></code>。模型下拉會空到 Ollama 上線為止。
@@ -851,11 +883,59 @@ const pageCopy = {
   graph: { title: "圖譜", lede: "筆記關係。撳節點去筆記。" },
 };
 
+const ollamaSetupHtml = (document.getElementById("ollamaSetup") || {}).innerHTML || "";
+const ollamaNoTextHtml = (document.getElementById("ollamaNoText") || {}).innerHTML || "";
+let llmState = {
+  backend: "ollama",
+  url: "",
+  hasKey: false,
+  endpoint: "127.0.0.1:11434",
+  downLabel: "連唔到 Ollama（127.0.0.1:11434）",
+  error: "",
+  embedModel: "nomic-embed-text",
+  defaultModel: "llama3.2",
+};
+
+function applyLlmForm(data) {
+  if (!data || typeof data !== "object") return;
+  llmState = {
+    backend: data.backend === "openwebui" ? "openwebui" : "ollama",
+    url: data.url || "",
+    hasKey: !!data.hasKey,
+    endpoint: data.endpoint || "",
+    downLabel: data.downLabel || "連唔到 Ollama（127.0.0.1:11434）",
+    error: data.error || "",
+    embedModel: data.embedModel || "nomic-embed-text",
+    defaultModel: data.defaultModel || "llama3.2",
+  };
+  const sel = document.getElementById("llmBackend");
+  if (sel && document.activeElement !== sel) sel.value = llmState.backend;
+  syncOwuiFields();
+}
+
+function syncOwuiFields() {
+  const sel = document.getElementById("llmBackend");
+  const show = !!(sel && sel.value === "openwebui");
+  const fields = document.getElementById("owuiFields");
+  if (fields) fields.hidden = !show;
+  const url = document.getElementById("owuiUrl");
+  if (url && document.activeElement !== url && !url.dataset.dirty) url.value = llmState.url || "";
+  const key = document.getElementById("owuiKey");
+  if (key && document.activeElement !== key) key.placeholder = llmState.hasKey ? "已儲存" : "API key";
+  const step = document.getElementById("dumpOnboardModel");
+  if (step) step.textContent = (sel && sel.value === "openwebui") ? "Open WebUI 分類" : "本機 Ollama 分類";
+}
+
+function liveDownText() {
+  if (llmState.error && llmState.error !== llmState.downLabel) return llmState.error;
+  return llmState.downLabel || "連唔到 Ollama（127.0.0.1:11434）";
+}
+
 function setDumpOnboardOllama(ready, modelName) {
   const line = document.getElementById("dumpOnboardOllama");
   if (!line) return;
   if (ready) {
-    const name = String(modelName || "").trim() || "llama3.2";
+    const name = String(modelName || "").trim() || llmState.defaultModel || "llama3.2";
     line.hidden = false;
     line.dataset.ready = "1";
     line.textContent = "就緒 · " + name;
@@ -878,17 +958,27 @@ function setOllamaLive(ok, modelName) {
     live.textContent = "未有合適文字模型";
   } else {
     live.classList.add("down");
-    live.textContent = "連唔到 Ollama（127.0.0.1:11434）";
+    live.textContent = liveDownText();
   }
 }
 
 function setOllamaSetupHint(show, defaultModel) {
   const hint = document.getElementById("ollamaSetup");
-  const modelEl = document.getElementById("ollamaSetupModel");
   if (!hint) return;
-  if (modelEl) {
-    const name = String(defaultModel || "llama3.2").trim() || "llama3.2";
-    modelEl.textContent = name;
+  const openwebui = llmState.backend === "openwebui";
+  if (openwebui) {
+    const ep = llmState.endpoint || "Open WebUI";
+    if (llmState.error === "Open WebUI 要 API key") hint.textContent = "Open WebUI 要 API key（" + ep + "）。";
+    else if (llmState.error === "要有 Open WebUI 網址" || llmState.error === "Open WebUI 網址唔啱") hint.textContent = llmState.error + "。填網址同 API key，再儲存。";
+    else if (llmState.error && llmState.error !== llmState.downLabel) hint.textContent = llmState.error;
+    else hint.textContent = "連唔到 Open WebUI（" + ep + "）。檢查網址同 API key。模型下拉會空到連到為止。";
+  } else {
+    hint.innerHTML = ollamaSetupHtml;
+    const modelEl = document.getElementById("ollamaSetupModel");
+    if (modelEl) {
+      const name = String(defaultModel || llmState.defaultModel || "llama3.2").trim() || "llama3.2";
+      modelEl.textContent = name;
+    }
   }
   hint.hidden = !show;
   const noText = document.getElementById("ollamaNoText");
@@ -897,7 +987,11 @@ function setOllamaSetupHint(show, defaultModel) {
 function setOllamaNoTextHint(show) {
   const noText = document.getElementById("ollamaNoText");
   const hint = document.getElementById("ollamaSetup");
-  if (noText) noText.hidden = !show;
+  if (noText) {
+    if (show && llmState.backend === "openwebui") noText.textContent = "未有合適文字模型。喺 Open WebUI 加一個文字模型。";
+    else if (show) noText.innerHTML = ollamaNoTextHtml;
+    noText.hidden = !show;
+  }
   if (show && hint) hint.hidden = true;
 }
 
@@ -926,9 +1020,10 @@ async function loadOllamaModels() {
     const r = await fetch("/api/models");
     data = await r.json().catch(() => data);
   } catch {
-    /* Ollama / server unreachable — leave empty */
+    /* model backend / server unreachable — leave empty */
   }
-  const defaultModel = data.defaultModel || "llama3.2";
+  applyLlmForm(data);
+  const defaultModel = data.defaultModel || llmState.defaultModel || "llama3.2";
   const models = Array.isArray(data.models) ? data.models.filter(Boolean) : [];
   if (!data.ok) {
     sel.innerHTML = "";
@@ -975,6 +1070,66 @@ document.getElementById("ollamaModel").addEventListener("change", async () => {
   } catch {
     await loadOllamaModels();
   }
+});
+
+async function saveLlm(body) {
+  const err = document.getElementById("owuiErr");
+  try {
+    const r = await fetch("/api/llm", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (err) {
+        err.hidden = false;
+        err.textContent = data.error || "儲存唔到";
+      }
+      await loadOllamaModels();
+      return;
+    }
+    if (err) err.hidden = true;
+    const url = document.getElementById("owuiUrl");
+    if (url) delete url.dataset.dirty;
+    const key = document.getElementById("owuiKey");
+    if (key) key.value = "";
+    applyLlmForm(data);
+    await loadOllamaModels();
+  } catch {
+    if (err) {
+      err.hidden = false;
+      err.textContent = "儲存唔到";
+    }
+  }
+}
+
+document.getElementById("llmBackend").addEventListener("change", async () => {
+  const err = document.getElementById("owuiErr");
+  if (err) err.hidden = true;
+  syncOwuiFields();
+  if (document.getElementById("llmBackend").value === "ollama") {
+    await saveLlm({ backend: "ollama" });
+  }
+});
+document.getElementById("owuiUrl").addEventListener("input", () => {
+  document.getElementById("owuiUrl").dataset.dirty = "1";
+});
+document.getElementById("owuiSave").addEventListener("click", () => {
+  const body = {
+    backend: "openwebui",
+    url: document.getElementById("owuiUrl").value.trim(),
+  };
+  const key = document.getElementById("owuiKey").value.trim();
+  if (key) body.apiKey = key;
+  saveLlm(body);
+});
+["owuiUrl", "owuiKey"].forEach((id) => {
+  document.getElementById(id).addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    document.getElementById("owuiSave").click();
+  });
 });
 function showTab(id) {
   tabs.forEach((b) => b.classList.toggle("on", b.dataset.tab === id));
@@ -3138,6 +3293,17 @@ async function refreshEmbedHint() {
     const data = await r.json().catch(() => ({}));
     if (data.ok && !data.embedder) {
       el.hidden = false;
+      const model = String(data.model || "nomic-embed-text");
+      el.replaceChildren();
+      if (data.backend === "openwebui") {
+        el.textContent = "未有 embedder。Open WebUI 要有 " + model + "。照 keyword 搜。";
+      } else {
+        el.append("未有 embedder。本機跑 ");
+        const code = document.createElement("code");
+        code.textContent = "ollama pull " + model;
+        el.append(code);
+        el.append("。11434 通就照 keyword 搜。");
+      }
       if (fill) fill.hidden = true;
       return;
     }
@@ -3209,7 +3375,7 @@ document.getElementById("askForm").addEventListener("submit", async (e) => {
   if (!res.ok || !data.ok) {
     const err = document.createElement("p");
     err.className = "err";
-    err.textContent = data.error || "連唔到 Ollama（127.0.0.1:11434）";
+    err.textContent = data.error || llmState.downLabel || "連唔到 Ollama（127.0.0.1:11434）";
     out.appendChild(err);
     paintCites(cites);
     return;

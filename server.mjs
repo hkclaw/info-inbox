@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import mammoth from "mammoth";
 import zlib from "node:zlib";
 import { createRequire } from "node:module";
+import { createLlm } from "./llm.mjs";
 const require = createRequire(import.meta.url);
 const WordExtractor = require("word-extractor");
 
@@ -20,27 +21,12 @@ const storeFile = path.join(dataDir, "inbox.json");
 const modelFile = path.join(dataDir, "ollama-model.json");
 const boxFile = path.join(dataDir, "current-box.json");
 const vectorFile = path.join(dataDir, "vectors.json");
-const EMBED_MODEL = process.env.OLLAMA_EMBED || "nomic-embed-text";
-const OLLAMA = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
-const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
-const OLLAMA_MS = Number(process.env.OLLAMA_MS || 90000);
+const llm = createLlm({ dataDir, env: process.env });
 const CLASSIFY_CHARS = 4000;
 const CLASSIFY_NUM_PREDICT = 256;
-const TAGS_MS = Number(process.env.OLLAMA_TAGS_MS || 3000);
-const CLASSIFY_FAIL = "連唔到 Ollama（127.0.0.1:11434）";
 const CLASSIFY_NO_TEXT = "未有合適文字模型";
-const CLASSIFY_TIMEOUT = "模型回逾時";
-function classifyHttpError(status) {
-  return "模型回錯誤（HTTP " + status + "）";
-}
-function classifyCatchError(err) {
-  if (err && err.name === "AbortError") return CLASSIFY_TIMEOUT;
-  const code = err && (err.code || (err.cause && err.cause.code));
-  const msg = String((err && err.message) || "");
-  if (code === "ECONNREFUSED" || code === "ENOTFOUND" || /fetch failed|ECONNREFUSED/i.test(msg)) {
-    return CLASSIFY_FAIL;
-  }
-  return "模型回錯誤";
+function downFail() {
+  return llm.downMessage();
 }
 const TEXT_EXTS = new Set([".txt", ".md", ".csv", ".json", ".html", ".log"]);
 const UNSUPPORTED_BODY = "未支援抽文字";
@@ -129,9 +115,15 @@ function isDefaultModelName(name) {
   return n === "llama3.2" || n.startsWith("llama3.2:");
 }
 
+function isEmbedModel(name) {
+  const embed = llm.embedModel();
+  const n = String(name || "");
+  return !!embed && (n === embed || n.startsWith(embed + ":"));
+}
+
 function isBlockedAutoModel(name) {
   const n = String(name || "").toLowerCase();
-  return /vl|vision/.test(n) || /27b|32b/.test(n);
+  return /vl|vision/.test(n) || /27b|32b/.test(n) || isEmbedModel(name);
 }
 
 function pickDefaultModel(models) {
@@ -141,32 +133,6 @@ function pickDefaultModel(models) {
   const pref = loadModelPreference();
   if (pref && list.includes(pref) && !isBlockedAutoModel(pref)) return pref;
   return list.find((m) => !isBlockedAutoModel(m)) || null;
-}
-
-async function listOllamaModels() {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TAGS_MS);
-  try {
-    const r = await fetch(OLLAMA + "/api/tags", { signal: ctrl.signal });
-    if (!r.ok) return { ok: false, models: [] };
-    const data = await r.json();
-    const models = Array.isArray(data && data.models)
-      ? data.models
-          .map((m) => (m && m.name != null ? String(m.name).trim() : ""))
-          .filter(Boolean)
-      : [];
-    return { ok: true, models };
-  } catch {
-    return { ok: false, models: [] };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function getActiveModel() {
-  const pref = loadModelPreference();
-  if (pref && !isBlockedAutoModel(pref)) return pref;
-  return DEFAULT_MODEL;
 }
 
 function emptyStore() {
@@ -762,7 +728,7 @@ async function ingestText(text, opts = {}) {
     source: opts.source || "paste",
     tags: [],
     summary: unsupported ? UNSUPPORTED_BODY : null,
-    classifyError: unsupported ? null : CLASSIFY_FAIL,
+    classifyError: unsupported ? null : downFail(),
     box: normalizeBox(opts.box != null ? opts.box : loadCurrentBox()),
   };
   if (opts.source === "file") {
@@ -799,13 +765,13 @@ async function ingestText(text, opts = {}) {
       };
       const sugOut = await suggestAnswers(queued.text, row.text || trimmed);
       queued.suggestions = sugOut.suggestions || [];
-      queued.suggestError = sugOut.ok ? null : (sugOut.error || CLASSIFY_FAIL);
+      queued.suggestError = sugOut.ok ? null : (sugOut.error || downFail());
       next.questions.unshift(queued);
     }
   } else {
     row.tags = [];
     row.summary = null;
-    row.classifyError = result.error || CLASSIFY_FAIL;
+    row.classifyError = result.error || downFail();
   }
   save(next);
   await embedNote(row.id, row.text || trimmed);
@@ -829,113 +795,71 @@ function sendFile(res, file) {
 
 
 
-async function suggestAnswers(question, noteText) {
-  const listed = await listOllamaModels();
-  if (!listed.ok) return { ok: false, error: CLASSIFY_FAIL, suggestions: [] };
-  const model = pickDefaultModel(listed.models);
-  if (!model) return { ok: false, error: CLASSIFY_NO_TEXT, suggestions: [] };
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), OLLAMA_MS);
+function parseModelJson(raw) {
   try {
-    const r = await fetch(OLLAMA + "/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      signal: ctrl.signal,
-      body: JSON.stringify({
-        model,
-        stream: false,
-        format: "json",
-        messages: [
-          {
-            role: "system",
-            content:
-              'Suggest short answers to a clarifying question about a personal note. JSON only: {"suggestions":["..."]}. Two to four short options. Same language as the question. Do not invent facts that are not in the note.',
-          },
-          {
-            role: "user",
-            content: ("Question: " + String(question || "") + "\n\nNote:\n" + String(noteText || "")).slice(0, CLASSIFY_CHARS),
-          },
-        ],
-        options: { num_predict: CLASSIFY_NUM_PREDICT },
-      }),
-    });
-    if (!r.ok) return { ok: false, error: classifyHttpError(r.status), suggestions: [] };
-    const data = await r.json();
-    const raw = data && data.message && data.message.content;
-    let parsed;
+    return JSON.parse(raw);
+  } catch {
+    const m = String(raw || "").match(/\{[\s\S]*\}/);
+    if (!m) return null;
     try {
-      parsed = JSON.parse(raw);
+      return JSON.parse(m[0]);
     } catch {
-      const m = String(raw || "").match(/\{[\s\S]*\}/);
-      if (!m) return { ok: false, error: "模型回錯誤", suggestions: [] };
-      try { parsed = JSON.parse(m[0]); } catch { return { ok: false, error: "模型回錯誤", suggestions: [] }; }
+      return null;
     }
-    const suggestions = Array.isArray(parsed.suggestions)
-      ? parsed.suggestions.map((x) => String(x).trim()).filter(Boolean).slice(0, 4)
-      : [];
-    if (suggestions.length < 2) return { ok: false, error: "模型回錯誤", suggestions: [] };
-    return { ok: true, suggestions, error: null };
-  } catch (err) {
-    return { ok: false, error: classifyCatchError(err), suggestions: [] };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
-async function classify(text) {
-  const listed = await listOllamaModels();
-  if (!listed.ok) return { ok: false, error: CLASSIFY_FAIL };
+async function modelChat(messages) {
+  const listed = await llm.listChatModels();
+  if (!listed.ok) return { ok: false, error: listed.error || downFail() };
   const model = pickDefaultModel(listed.models);
   if (!model) return { ok: false, error: CLASSIFY_NO_TEXT };
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), OLLAMA_MS);
-  try {
-    const r = await fetch(OLLAMA + "/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      signal: ctrl.signal,
-      body: JSON.stringify({
-        model,
-        stream: false,
-        format: "json",
-        messages: [
-          {
-            role: "system",
-            content:
-              'Classify a personal note. JSON only: {"tags":["project-or-topic"],"summary":"one sentence","question":null}. Two to five short tags. If the dump is too vague to file, tags may be empty and question must be a short clarifying ask. Do not invent facts that are not in the text.',
-          },
-          { role: "user", content: String(text).slice(0, CLASSIFY_CHARS) },
-        ],
-        options: { num_predict: CLASSIFY_NUM_PREDICT },
-      }),
-    });
-    if (!r.ok) return { ok: false, error: classifyHttpError(r.status) };
-    const data = await r.json();
-    const raw = data && data.message && data.message.content;
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      const m = String(raw || "").match(/\{[\s\S]*\}/);
-      if (!m) return { ok: false, error: "模型回錯誤" };
-      try {
-        parsed = JSON.parse(m[0]);
-      } catch {
-        return { ok: false, error: "模型回錯誤" };
-      }
-    }
-    const tags = Array.isArray(parsed.tags)
-      ? parsed.tags.map((x) => String(x).trim()).filter(Boolean).slice(0, 8)
-      : [];
-    const summary = parsed.summary ? String(parsed.summary).trim() : "";
-    const question = parsed.question ? String(parsed.question).trim() : "";
-    if (!tags.length && !summary && !question) return { ok: false, error: "模型回錯誤" };
-    return { ok: true, tags, summary: summary || null, question: question || null };
-  } catch (err) {
-    return { ok: false, error: classifyCatchError(err) };
-  } finally {
-    clearTimeout(timer);
-  }
+  const out = await llm.chatComplete({ model, messages, numPredict: CLASSIFY_NUM_PREDICT });
+  if (!out.ok) return { ok: false, error: out.error || downFail() };
+  return { ok: true, raw: out.content == null ? "" : String(out.content) };
+}
+
+async function suggestAnswers(question, noteText) {
+  const out = await modelChat([
+    {
+      role: "system",
+      content:
+        'Suggest short answers to a clarifying question about a personal note. JSON only: {"suggestions":["..."]}. Two to four short options. Same language as the question. Do not invent facts that are not in the note.',
+    },
+    {
+      role: "user",
+      content: ("Question: " + String(question || "") + "\n\nNote:\n" + String(noteText || "")).slice(0, CLASSIFY_CHARS),
+    },
+  ]);
+  if (!out.ok) return { ok: false, error: out.error, suggestions: [] };
+  const parsed = parseModelJson(out.raw);
+  if (!parsed) return { ok: false, error: "模型回錯誤", suggestions: [] };
+  const suggestions = Array.isArray(parsed.suggestions)
+    ? parsed.suggestions.map((x) => String(x).trim()).filter(Boolean).slice(0, 4)
+    : [];
+  if (suggestions.length < 2) return { ok: false, error: "模型回錯誤", suggestions: [] };
+  return { ok: true, suggestions, error: null };
+}
+
+async function classify(text) {
+  const out = await modelChat([
+    {
+      role: "system",
+      content:
+        'Classify a personal note. JSON only: {"tags":["project-or-topic"],"summary":"one sentence","question":null}. Two to five short tags. If the dump is too vague to file, tags may be empty and question must be a short clarifying ask. Do not invent facts that are not in the text.',
+    },
+    { role: "user", content: String(text).slice(0, CLASSIFY_CHARS) },
+  ]);
+  if (!out.ok) return { ok: false, error: out.error };
+  const parsed = parseModelJson(out.raw);
+  if (!parsed) return { ok: false, error: "模型回錯誤" };
+  const tags = Array.isArray(parsed.tags)
+    ? parsed.tags.map((x) => String(x).trim()).filter(Boolean).slice(0, 8)
+    : [];
+  const summary = parsed.summary ? String(parsed.summary).trim() : "";
+  const question = parsed.question ? String(parsed.question).trim() : "";
+  if (!tags.length && !summary && !question) return { ok: false, error: "模型回錯誤" };
+  return { ok: true, tags, summary: summary || null, question: question || null };
 }
 
 
@@ -969,11 +893,6 @@ function mergeSearch(keywordNotes, vecNotes) {
   return out;
 }
 
-function isEmbedModel(name) {
-  const n = String(name || "");
-  return n === EMBED_MODEL || n.startsWith(EMBED_MODEL + ":");
-}
-
 function loadVectors() {
   try {
     const s = JSON.parse(fs.readFileSync(vectorFile, "utf8"));
@@ -1004,23 +923,34 @@ function missingVectorIds() {
 }
 
 async function embedStatus() {
-  const listed = await listOllamaModels();
+  const listed = await llm.probeEmbed();
   const missing = missingVectorIds().length;
-  if (!listed.ok) return { ok: false, embedder: false, missing, running: backfillState.running };
+  const pub = llm.publicConfig();
+  if (!listed.ok) {
+    return {
+      ok: false,
+      embedder: false,
+      missing,
+      running: backfillState.running,
+      model: pub.embedModel,
+      backend: pub.backend,
+    };
+  }
   return {
     ok: true,
-    embedder: listed.models.some(isEmbedModel),
+    embedder: !!listed.embedder,
     missing,
     running: backfillState.running,
-    model: EMBED_MODEL,
+    model: pub.embedModel,
+    backend: pub.backend,
   };
 }
 
 async function backfillEmbeddings() {
   if (backfillState.running) return { ok: true, running: true };
-  const listed = await listOllamaModels();
-  if (!listed.ok || !listed.models.some(isEmbedModel)) {
-    return { ok: true, started: false, embedder: !!(listed.ok && listed.models.some(isEmbedModel)), ollama: listed.ok };
+  const listed = await embedStatus();
+  if (!listed.ok || !listed.embedder) {
+    return { ok: true, started: false, embedder: !!listed.embedder, ollama: listed.ok };
   }
   backfillState.running = true;
   try {
@@ -1041,39 +971,7 @@ async function backfillEmbeddings() {
 }
 
 async function embedText(text) {
-  const status = await embedStatus();
-  if (!status.ok) return { ok: false, down: true };
-  if (!status.embedder) return { ok: false, missing: true };
-  const prompt = String(text || "").slice(0, 4000);
-  if (!prompt.trim()) return { ok: false };
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 15000);
-  try {
-    let r = await fetch(OLLAMA + "/api/embed", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      signal: ctrl.signal,
-      body: JSON.stringify({ model: EMBED_MODEL, input: prompt }),
-    });
-    let data = await r.json().catch(() => ({}));
-    let vec = Array.isArray(data.embeddings) ? data.embeddings[0] : data.embedding;
-    if (!Array.isArray(vec) || !vec.length) {
-      r = await fetch(OLLAMA + "/api/embeddings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal: ctrl.signal,
-        body: JSON.stringify({ model: EMBED_MODEL, prompt }),
-      });
-      data = await r.json().catch(() => ({}));
-      vec = data.embedding;
-    }
-    if (!Array.isArray(vec) || !vec.length) return { ok: false };
-    return { ok: true, embedding: vec };
-  } catch {
-    return { ok: false };
-  } finally {
-    clearTimeout(timer);
-  }
+  return llm.embedText(text);
 }
 
 async function embedNote(id, text) {
@@ -1172,69 +1070,36 @@ async function askBox(q, box) {
   if (!pool.length) return { status: 200, body: { ok: false, empty: true, error: ASK_EMPTY } };
   const hit = await retrieveAsk(question, pool);
   const cites = hit.notes.map((n) => ({ id: n.id, label: citeLabel(n) }));
-  const listed = await listOllamaModels();
-  if (!listed.ok) return { status: 200, body: { ok: false, error: CLASSIFY_FAIL, cites, used: hit.used } };
-  const model = pickDefaultModel(listed.models);
-  if (!model) return { status: 200, body: { ok: false, error: CLASSIFY_NO_TEXT, cites, used: hit.used } };
   const chunks = hit.notes.map((n, i) => {
     const body = String(n.text || "").slice(0, 800);
     return "#" + (i + 1) + " id=" + n.id + "\n" + body;
   }).join("\n\n");
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), OLLAMA_MS);
-  try {
-    const r = await fetch(OLLAMA + "/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      signal: ctrl.signal,
-      body: JSON.stringify({
-        model,
-        stream: false,
-        format: "json",
-        messages: [
-          {
-            role: "system",
-            content:
-              'Answer using ONLY the numbered notes. JSON only: {"answer":"...","citeIds":["id"]}. Same language as the question. If the notes do not contain the answer, say so in answer. Do not invent facts.',
-          },
-          {
-            role: "user",
-            content: ("Question: " + question + "\n\nNotes:\n" + chunks).slice(0, CLASSIFY_CHARS),
-          },
-        ],
-        options: { num_predict: CLASSIFY_NUM_PREDICT },
-      }),
-    });
-    if (!r.ok) return { status: 200, body: { ok: false, error: classifyHttpError(r.status), cites, used: hit.used } };
-    const data = await r.json();
-    const raw = data && data.message && data.message.content;
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      const m = String(raw || "").match(/\{[\s\S]*\}/);
-      if (!m) return { status: 200, body: { ok: false, error: "模型回錯誤", cites, used: hit.used } };
-      try { parsed = JSON.parse(m[0]); } catch {
-        return { status: 200, body: { ok: false, error: "模型回錯誤", cites, used: hit.used } };
-      }
-    }
-    const answer = parsed && parsed.answer != null ? String(parsed.answer).trim() : "";
-    if (!answer) return { status: 200, body: { ok: false, error: "模型回錯誤", cites, used: hit.used } };
-    const allowed = new Set(hit.notes.map((n) => n.id));
-    const citeIds = Array.isArray(parsed.citeIds) ? parsed.citeIds.map((x) => String(x)) : [];
-    const ordered = [];
-    citeIds.forEach((id) => {
-      if (allowed.has(id) && !ordered.includes(id)) ordered.push(id);
-    });
-    const shown = (ordered.length ? ordered : hit.notes.map((n) => n.id))
-      .map((id) => cites.find((c) => c.id === id))
-      .filter(Boolean);
-    return { status: 200, body: { ok: true, answer, cites: shown, used: hit.used } };
-  } catch (err) {
-    return { status: 200, body: { ok: false, error: classifyCatchError(err), cites, used: hit.used } };
-  } finally {
-    clearTimeout(timer);
-  }
+  const out = await modelChat([
+    {
+      role: "system",
+      content:
+        'Answer using ONLY the numbered notes. JSON only: {"answer":"...","citeIds":["id"]}. Same language as the question. If the notes do not contain the answer, say so in answer. Do not invent facts.',
+    },
+    {
+      role: "user",
+      content: ("Question: " + question + "\n\nNotes:\n" + chunks).slice(0, CLASSIFY_CHARS),
+    },
+  ]);
+  if (!out.ok) return { status: 200, body: { ok: false, error: out.error || downFail(), cites, used: hit.used } };
+  const parsed = parseModelJson(out.raw);
+  if (!parsed) return { status: 200, body: { ok: false, error: "模型回錯誤", cites, used: hit.used } };
+  const answer = parsed && parsed.answer != null ? String(parsed.answer).trim() : "";
+  if (!answer) return { status: 200, body: { ok: false, error: "模型回錯誤", cites, used: hit.used } };
+  const allowed = new Set(hit.notes.map((n) => n.id));
+  const citeIds = Array.isArray(parsed.citeIds) ? parsed.citeIds.map((x) => String(x)) : [];
+  const ordered = [];
+  citeIds.forEach((id) => {
+    if (allowed.has(id) && !ordered.includes(id)) ordered.push(id);
+  });
+  const shown = (ordered.length ? ordered : hit.notes.map((n) => n.id))
+    .map((id) => cites.find((c) => c.id === id))
+    .filter(Boolean);
+  return { status: 200, body: { ok: true, answer, cites: shown, used: hit.used } };
 }
 
 function searchHay(q, store) {
@@ -1411,14 +1276,39 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === "GET" && u.pathname === "/api/llm") {
+    json(res, 200, llm.publicConfig());
+    return;
+  }
+
+  if (method === "PUT" && u.pathname === "/api/llm") {
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "JSON 唔啱" });
+      return;
+    }
+    const saved = llm.saveConfig(payload);
+    if (!saved.ok) {
+      json(res, 400, { error: saved.error || "儲存唔到" });
+      return;
+    }
+    json(res, 200, { ok: true, ...llm.publicConfig() });
+    return;
+  }
+
   if (method === "GET" && u.pathname === "/api/models") {
-    const listed = await listOllamaModels();
+    const listed = await llm.listChatModels();
+    const pub = llm.publicConfig();
     if (!listed.ok) {
       json(res, 200, {
         ok: false,
         models: [],
         selected: null,
-        defaultModel: DEFAULT_MODEL,
+        defaultModel: pub.defaultModel,
+        error: listed.error || downFail(),
+        ...pub,
       });
       return;
     }
@@ -1431,7 +1321,8 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       models: listed.models,
       selected: selected || null,
-      defaultModel: DEFAULT_MODEL,
+      defaultModel: pub.defaultModel,
+      ...pub,
     });
     return;
   }
@@ -1449,9 +1340,9 @@ const server = http.createServer(async (req, res) => {
       json(res, 400, { error: "要有 model" });
       return;
     }
-    const listed = await listOllamaModels();
+    const listed = await llm.listChatModels();
     if (!listed.ok) {
-      json(res, 503, { error: CLASSIFY_FAIL, models: [] });
+      json(res, 503, { error: listed.error || downFail(), models: [] });
       return;
     }
     if (!listed.models.includes(wanted)) {
@@ -1752,7 +1643,7 @@ const server = http.createServer(async (req, res) => {
           row.classifyError = null;
           classified++;
         } else {
-          row.classifyError = result.error || CLASSIFY_FAIL;
+          row.classifyError = result.error || downFail();
           failed++;
         }
         await embedNote(row.id, row.text || "");
@@ -1780,7 +1671,7 @@ const server = http.createServer(async (req, res) => {
       row.summary = result.summary;
       row.classifyError = null;
     } else {
-      row.classifyError = result.error || CLASSIFY_FAIL;
+      row.classifyError = result.error || downFail();
     }
     save(store);
     await embedNote(row.id, row.text || "");
@@ -1877,7 +1768,7 @@ const server = http.createServer(async (req, res) => {
     const note = store.notes.find((n) => n.id === row.noteId);
     const sugOut = await suggestAnswers(row.text, note && note.text);
     row.suggestions = sugOut.suggestions || [];
-    row.suggestError = sugOut.ok ? null : (sugOut.error || CLASSIFY_FAIL);
+    row.suggestError = sugOut.ok ? null : (sugOut.error || downFail());
     save(store);
     json(res, 200, { ok: !!sugOut.ok, question: row, error: row.suggestError });
     return;
@@ -1930,7 +1821,7 @@ const server = http.createServer(async (req, res) => {
       src.summary = result.summary;
       src.classifyError = null;
     } else {
-      src.classifyError = result.error || CLASSIFY_FAIL;
+      src.classifyError = result.error || downFail();
     }
     save(store);
     await embedNote(src.id, src.text || "");
