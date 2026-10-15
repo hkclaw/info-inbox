@@ -43,7 +43,7 @@ async function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: "入盒 Hap",
-    backgroundColor: "#1c1916",
+    backgroundColor: "#ffffff",
     show: false,
     webPreferences: {
       nodeIntegration: false,

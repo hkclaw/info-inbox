@@ -1,67 +1,125 @@
 # 入盒
 
-Local inbox for scattered notes. Dump text, classify later with a local Ollama model, answer pending questions, search. Data stays on this machine. Not a full PKM.
+本機用嘅筆記入口。先把散亂文字同檔案倒入去，之後先分類、答問題、搜尋。資料留喺呢部機，唔係一套完整嘅知識庫。
 
-No cloud. No lan-vnc, heui-bin, or mesh-lan.
+介面只聽 `127.0.0.1`。唔好公開到互聯網。
 
-## Open
+## 打開
 
-Need Node 18+.
+要 Node 18 或更新。
 
-    git clone https://github.com/hkclaw/info-inbox.git && cd info-inbox && npm i && npm start
+```bash
+git clone https://github.com/hkclaw/info-inbox.git
+cd info-inbox
+npm i
+npm start
+```
 
-Then open http://127.0.0.1:3741/  Empty inbox on first run. Listens on 127.0.0.1 only. Do not publish this to the public internet. The UI shell is a notes-app layout (sidebar + editor), not a form dashboard.
+然後開 [http://127.0.0.1:3741/](http://127.0.0.1:3741/)。第一次係空盒。
 
-macOS app window (thin Electron shell; same Express server, same copper UI):
+Mac 視窗用同一部伺服器：
 
-    npm i && npm run electron
+```bash
+npm i
+npm run electron
+```
 
-Opens a Mac window to http://127.0.0.1:3741/. Inbox JSON lives under Electron userData `data/` (or set `INFO_INBOX_DATA`). Still talks to local Ollama at 127.0.0.1:11434. Does not bundle Ollama. Browser `npm start` still works with repo `data/`.
+瀏覽器版嘅資料喺專案入面嘅 `data/`。Electron 版預設寫去 userData 入面嘅 `data/`。兩邊都可以用 `INFO_INBOX_DATA` 指去另一個資料夾。程式唔會包埋 Ollama。
 
-Empty Dump shows three short steps (paste/drop → local Ollama → Pending when vague) and says data stays on this machine with no cloud; when Ollama is up it shows ready plus the selected model, when down the existing serve/pull hints stay. The block hides once any note exists and never blocks paste, multi-file drop, or 存入.
+## 頁面
 
-## V1 (today)
+| 頁 | 做咩 |
+| --- | --- |
+| 傾倒 | 貼文字、拖檔或者拖資料夾，然後存入 |
+| 筆記 | 睇、改文字、改 tag、搬去另一個盒 |
+| 搜尋 | 用關鍵字搵，或者問呢個盒 |
+| 待答 | 太含糊、要你補充嘅問題 |
+| 合併 | 重疊筆記嘅建議；你接受先會改寫 |
+| 圖譜 | 筆記同 tag 嘅關係，可以拖同縮放 |
 
-- Dump a block of text. Exact-duplicate text (trim, not fuzzy) warns 「呢段同已有 note 一樣」 and needs 仍然存入. Dump also accepts files (txt/md/csv/json/html/log/pdf/xlsx/xls/docx/doc/pptx/ppt/rtf/odt/eml locally; other types still become a note with 「未支援抽文字」); drag folders too (recursive, same formats; empty folder shows a Cantonese hint). Multi-file wait shows 第 N／共 M, elapsed seconds, and 抽出／分類中 (no fake bar). Images stay filename-only. .eml keeps Subject/From/Date plus the plain body (HTML is stripped). Ollama llama3.2 at http://127.0.0.1:11434 writes tags + a one-line summary; if it is down the note stays, tags stay empty, and the page shows 「連唔到 Ollama（127.0.0.1:11434）」. No invented tags. After 存入, Dump lists each new item as 抽出 → 分類中 → 完成／待答／失敗 (honest classifyError; extract fail stays filename + 「未支援抽文字」). One file's classify fail does not stop the rest.
-- When Ollama is down, Dump shows setup (`ollama serve` / `ollama pull …`) and the model picker stays empty until tags load.
-- Notes list. Click a tag to filter; 「清篩選／顯示全部」 clears. 編輯 PATCHes text only and re-embeds that note with local nomic if it is pulled (same path as Dump/backfill); if nomic is missing the save still succeeds, the stale vector is dropped, Search stays keyword-only, and it does not pretend 連唔到 while 11434 is up. Save does not auto-reclassify. Cards PATCH /api/notes/:id { tags } (trim, dedupe; empty array clears; no invented tags; does not reclassify or re-embed). Cards PATCH /api/notes/:id { summary } (trim; empty clears the one-line summary; no invented text; does not reclassify or re-embed). 「加 tag 去選中」 PATCHes that tag onto every selected note (trim, dedupe; already-present skipped; empty selection does not POST; no invented tags; no reclassify or re-embed). 「移除 tag 去選中」 PATCHes that trimmed tag off every selected note (already-absent skipped; empty selection does not POST; no invented tags; no reclassify or re-embed). 「改名呢個 tag」 POST /api/tags/rename { from, to } (both trim; empty or unchanged → 要有 tag／tag 冇變, no write; every note with that tag is renamed, target-already-present is deduped; no invented tags; no reclassify or re-embed; Notes／Search／Graph chips follow). 「刪除呢個 tag」 POST /api/tags/delete { tag } (trim; empty → 要有 tag, missing → 搵唔到呢個 tag, no write; strips that tag from every note that has it and keeps the notes; UI confirm; no invented tags; no reclassify or re-embed). 刪除 is DELETE /api/notes/:id. Empty tags or classifyError show 「重新分類」. 「重新分類選中」 POSTs /api/notes/:id/reclassify on every selected note (same local Ollama path as the card button; empty selection does not POST; one failure does not stop the rest; honest per-note error; no invented tags; re-embed same as single reclassify). Card body wraps long lines (pre-wrap + overflow-wrap anywhere), defaults to ~8 lines / 280px with a fade and 「展開全文」／「收埋」; expanded max-height 60vh scroll. Edit textarea stays full text. Search note cards share this; Dump input unchanged.
-- Search finds notes and questions (text / summary / tags / filename / ext). With local Ollama `nomic-embed-text`, Dump stores a vector per note and Search mixes keyword with cosine; notes ingested before nomic was pulled get a background backfill (`POST /api/embed/backfill`, also on server start) that does not block Dump. Search shows 「有 N 條未有向量」／「補緊向量」 while that runs. If the embedder is missing it stays keyword-only and Search shows `ollama pull nomic-embed-text` (not 連唔到 while 11434 is up). Search also has 「問呢個盒」: POST /api/ask uses the current box filter (named / 未分類 / 全部), retrieves top notes with nomic vectors or keyword, then local Ollama answers from those snippets only with clickable cites; empty box 「呢個盒冇筆記可問」; Ollama down is an honest error and does not invent an answer.
-- Pending: open items have 2-4 short answer chips from the local text model, plus 「自己填」 for the reply box, and 「睇來源筆記」. Clicking a chip POSTs /api/questions/:id/answer the same as typing. Opening Pending fills missing chips via POST /api/questions/:id/suggest; 「再建議」 force-regenerates. Suggestions stay on the question across reload. If Ollama is down, chips stay empty (no invented options), the existing error line shows, and you can still fill it yourself. Answering appends 「（澄清）答：…」 to the source note and reclassifies it. Answered cards stay with 「答：…」. Open cards have 「略過」 (POST /api/questions/:id/skip) which closes the question without writing a clarification or reclassifying; already-answered cards stay. 「清走已關閉」 POST /api/questions/clear-closed drops answered and skipped (non-open) rows after confirm; open questions stay; notes are untouched (no text/tag/summary/reclassify); none closed → 冇已關閉問題, no write. Closed cards have 「重開」 (POST /api/questions/:id/reopen) which sets status open; skipped reopens as-is; answered clears the answer field but does not strip 「（澄清）答：…」 from the source note; already-open 409 已經開放; does not invent suggestions or tags. Each Pending card has 「刪除呢條問題」 (DELETE /api/questions/:id, confirm) which removes that question only; notes (text/tags/summary/clarification line) stay; missing → 搵唔到呢條問題; does not invent tags or suggestions. Status chips 「全部／開放／略過／已答」 filter the Pending list (default 開放; client-only; empty 「呢度冇開放問題」／「呢度冇略過問題」／「呢度冇已答問題」); notes untouched.
-- Merge tab: overlapping pairs, accept or dismiss. Does not auto-rewrite the inbox.
-- Tabs: Dump / Notes / Search / Pending / Merge / 圖譜. Localhost 127.0.0.1:3741 only.
-- Graph tab: notes as hollow copper nodes; tags are smaller hollow hubs. Notes link to tags (not note↔note from one shared tag). Merge and pending stay note↔note (pending dashed). Labels cap at 16 characters. Click a note to jump to Notes. Pan/zoom; tag chips filter. Same box chips as Notes/Search (「全部」 / named / 「未分類」) filter nodes; an empty box filter shows 「呢個盒冇筆記」 / 「未分類冇筆記」. Empty inbox shows 「未有筆記」. Local canvas, no cloud.
+右上角 **資料** 先至係備份、匯入、還原同清空。
 
-## Classify
+## 點用
 
-Needs a local Ollama. Default model llama3.2 at http://127.0.0.1:11434. On Dump you can pick a local Ollama model from the pulled list; if llama3.2 is pulled, reload selects it. Auto-pick never chooses VL/vision or a 27b/32b name; if none of the pulled models are suitable the picker stays empty and Dump shows 「未有合適文字模型」 plus `ollama pull llama3.2`. Manual PUT can still choose a VL model. Classify sends the first 4k characters, num_predict 256, timeout 90s.
+1. 喺傾倒貼一段文字，或者拖檔入去，撳 **存入**。
+2. 本機模型會寫幾個 tag 同一行摘要。太含糊就會去待答。
+3. 筆記可以放入命名盒。留空就係未分類。盒唔會再疊盒。
+4. 搜尋會搵文字、摘要、tag 同檔名。拉咗 `nomic-embed-text` 之後，會一齊用向量。
 
-    ollama serve
-    ollama pull llama3.2
+完全一樣嘅文字（去頭尾空白，唔係模糊比對）會問你係咪仍然存入。
 
-Open WebUI is optional. With nothing set, the inbox still talks to Ollama at 127.0.0.1:11434. Set `LLM_BACKEND=openwebui`, `OPENWEBUI_URL` (for example `http://127.0.0.1:8080`), and `OPENWEBUI_API_KEY`, or pick Open WebUI in the Dump footer, enter that URL and API key, and 儲存. The key is stored in `data/llm.json` and is not returned by the API. `http` and `https` only. Classify, suggestions, and 「問呢個盒」 use `POST /api/chat/completions`. The model list is `GET /api/models`. Embeddings try `POST /api/embeddings`, then `/ollama/api/embed`, `/ollama/v1/embeddings`, and `/ollama/api/embeddings`. The embed model stays `nomic-embed-text` unless `OPENWEBUI_EMBED` or `OLLAMA_EMBED` is set. Note text is sent only to that configured URL. Unreachable shows 「連唔到 Open WebUI（host:port）」. HTTP 401/403 shows 「Open WebUI 要 API key」. Dump still saves if Open WebUI is down. No invented tags.
+支援抽文字嘅格式：txt、md、csv、json、html、log、pdf、xlsx、xls、docx、doc、pptx、ppt、rtf、odt、eml。其他類型仍然會成一條筆記，內容係檔名加「未支援抽文字」。圖片只留檔名。`.eml` 會留 Subject、From、Date 同純文字正文。
 
-If Ollama is down, Dump shows setup steps (`ollama serve` / `ollama pull …`) beside the empty model list. Dump still saves if the model is offline. Unreachable 11434 shows 「連唔到 Ollama（127.0.0.1:11434）」. A reachable model that returns HTTP 500 shows 「模型回錯誤（HTTP 500）」; a timeout shows 「模型回逾時」. No invented tags. Vague dumps may enqueue an open question. Answer on the Pending tab (textarea + 送出) or POST /api/questions/:id/answer with { "answer": "..." }. That stores the answer, sets status to answered, and appends 「（澄清）答：…」 to the source note. Pending cards with a noteId have 「睇來源筆記」 to jump to that note. Already answered, missing noteId, and missing source note return a clear error. After a successful answer the source note is reclassified with the same local Ollama (llama3.2). If Ollama is down the clarification still stays on the note, tags are not invented, and 「連唔到 Ollama（127.0.0.1:11434）」 is shown.
+模型離線都一樣存到筆記。Tag 唔會憑空捏造。
 
-## Merge
+## 模型
 
-Overlapping notes (shared tags or similar text) show as suggestions. Nothing is rewritten until you accept.
+預設係本機 Ollama 嘅 `llama3.2`，位址 `http://127.0.0.1:11434`。
 
-GET /api/merge-suggestions lists pairs in the same box only (empty box pairs with unclassified only; no cross-box). Accept merges bodies, unions tags, keeps that box, keeps one summary (rewrites with Ollama only if it is up), and deletes the other id. Merge tab uses the same box chips; empty filter shows 「呢個盒冇合併」 / 「未分類冇合併」. Dismiss leaves both notes. Stored in data/. Localhost only, no cloud.
+```bash
+ollama serve
+ollama pull llama3.2
+ollama pull nomic-embed-text
+```
 
-## Notes
+分類只送頭 4000 字，約 90 秒超時。自動揀模型會跳過 vision，同埋個名有 27b、32b 嘅模型。如果 llama3.2 已經拉咗，重新載入會揀返佢。
 
-Click a tag chip on the Notes tab to show only notes with that tag. 「清篩選／顯示全部」 clears the filter.
+`nomic-embed-text` 用嚟做搜尋向量。未拉嘅話，搜尋繼續用關鍵字，頁面會提示你拉模型，唔會假裝連唔到。
 
-Each card has 編輯 (textarea, 儲存／取消) to PATCH /api/notes/:id with { "text" }. Empty text returns 「要有文字」. Tags, summary, and classifyError are left as-is; use 「重新分類」 if you want a new classify. Each card has 刪除. Confirm runs DELETE /api/notes/:id and removes that note from data/. Open Pending rows with that noteId are removed; answered questions stay with 「來源已刪」 and do not jump to Notes. Missing ids return 「搵唔到呢條筆記」. Notes has 「重新分類未分類」 to reclassify only notes with classifyError or no tags, one by one; one failure does not stop the rest, and tags are not invented.
+### Open WebUI
 
-Notes with a classifyError or no tags show 「重新分類」. That POSTs /api/notes/:id/reclassify to the same local Ollama (llama3.2). Success writes tags and summary; if Ollama is down the text stays, tags are not invented, and 「連唔到 Ollama（127.0.0.1:11434）」 is shown.
+可選。唔設嘅話，仍然只用上面嘅 Ollama。
 
-## Backup
+喺傾倒頁把 **後端** 改做 Open WebUI，填網址同 API key，再撳 **儲存**。或者啟動前設：
 
-Open 「資料」 and click 「下載備份」 (GET /api/export). One JSON file with notes, pending questions, merge dismissals, and the vectors map. Filtered to a named box or 「未分類」, 「匯出呢個盒」 (GET /api/export?box=) exports only that box's notes, their Pending, pair dismissals among those ids, and matching vectors. 「全部」 still uses the full backup. 「匯入盒備份」 POSTs to /api/import-box and merges: other boxes stay, imported notes get new ids, plus their Pending, pair dismissals among those ids, and vectors; box name defaults to the file (empty = unclassified); you can type another target box on import and every imported note goes there. Notes whose trimmed text already exists in that target box are skipped (same exact-dup rule as Dump); the response reports imported vs skipped. Bad files return 「備份檔唔啱格式」 and write nothing. 「還原備份」 POSTs that JSON to /api/import and replaces the whole local store and vectors after confirm (all local data, not one box). Old backups with no vectors (or an empty map) clear embeddings so Search stays keyword-only and does not crash. Bad files return 「備份檔唔啱格式」 and write nothing. 「清空本機資料」 asks for a strong confirm that this is all local data (notes, questions, merges, vectors) then wipes them. Stays on this machine.
+```bash
+LLM_BACKEND=openwebui
+OPENWEBUI_URL=http://127.0.0.1:8080
+OPENWEBUI_API_KEY=你的金鑰
+```
 
-## Data
+網址只接受 `http` 同 `https`。API key 寫入 `data/llm.json`，介面唔會再顯示出嚟。分類、建議同「問呢個盒」走 Open WebUI 嘅 `POST /api/chat/completions`；模型清單係 `GET /api/models`。向量會先試 `POST /api/embeddings`，再試 Ollama proxy。筆記文字只會送到你填嘅呢個網址。
 
-JSON file under data/ (gitignored). Notes: id, text, createdAt, ingestedAt, source (paste | file), filename/ext/bytes/fileModifiedAt (file only), tags, summary, classifyError, clarifications, box (empty = unboxed). Dump picks or types a current box; Notes, Search, Graph, Pending, Merge, and Dump share box chips labeled with note counts (「工作 12」, empty named boxes stay at 0 until 刪盒). Cards PATCH /api/notes/:id { box } (trim; empty = unclassified; text stays). Notes can multi-select visible cards and 「搬去呢個盒」 (existing chip, new name, or unclassified); empty selection does not POST; only box is patched, not text/tags/summary. 「刪除選中」 asks a strong confirm then DELETE /api/notes/:id for each (open Pending dropped, answered stays 「來源已刪」, dropVector); empty selection is a no-op; one failure does not stop the rest. 「合併選中」 needs two or more notes in the same box (or all unclassified); otherwise a Chinese error and no write. Confirm, then join text, union tags, keep that box, rewrite one summary if Ollama is up (tags not invented); dropped ids follow delete (open Pending gone, answered 「來源已刪」, dropVector). Type a new box on the card. Rename a named box (POST /api/boxes/rename; empty/same name is an error and writes nothing) or 「刪盒」 (POST /api/boxes/unbox with confirm) which sets those notes to unclassified and does not delete notes. Pending uses the same box chips. Export/import keep box. No nested boxes. Questions: id, text, status (open | answered), answer, noteId, createdAt, suggestions, suggestError. dismissedMerges stores dismissed pair keys.
+連唔到會顯示「連唔到 Open WebUI（host:port）」。401 或 403 會顯示「Open WebUI 要 API key」。
 
-Merge later means overlapping notes, not rewriting the whole inbox.
+常用環境變數：
+
+| 變數 | 預設 | 用途 |
+| --- | --- | --- |
+| `PORT` | `3741` | 本機埠 |
+| `BIND` | `127.0.0.1` | 只綁呢個位址 |
+| `INFO_INBOX_DATA` | 專案 `data/` | 資料夾 |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama |
+| `OLLAMA_MODEL` | `llama3.2` | 文字模型 |
+| `OLLAMA_EMBED` | `nomic-embed-text` | 向量模型 |
+| `OPENWEBUI_EMBED` | 跟 `OLLAMA_EMBED` | Open WebUI 向量模型 |
+
+## 備份
+
+全部喺 **資料** 選單。
+
+- **下載備份**：成個 inbox 一個 JSON，包括筆記、待答、合併記錄同向量。
+- **匯出呢個盒**：只匯出而家篩緊嘅盒。「全部」仍然係成個備份。
+- **匯入盒備份**：合併入去。其他盒留低。目標盒入面已經有同樣文字嘅筆記會跳過。
+- **還原備份**：確認之後換晒成部機嘅資料。
+- **清空本機資料**：筆記、問題、合併記錄同向量一齊清走。
+
+格式唔啱會回「備份檔唔啱格式」，唔會寫入。
+
+## 資料
+
+`data/` 唔會入 git。
+
+| 檔 | 內容 |
+| --- | --- |
+| `inbox.json` | 筆記、待答問題、已忽略嘅合併 |
+| `vectors.json` | 搜尋向量 |
+| `llm.json` | Open WebUI 網址同 API key |
+| `ollama-model.json` | 而家揀咗嘅文字模型 |
+| `current-box.json` | 盒名單同而家嘅盒 |
+
+## 測試
+
+```bash
+npm test
+```
