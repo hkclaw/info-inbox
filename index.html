@@ -24,7 +24,7 @@
       --paper-ink: #2A241C;
       --tag-bg: #332C24;
       --tag-ink: #D9CFB8;
-      --sidebar-w: 240px;
+      --sidebar-w: 168px;
       --measure: 760px;
       --header-h: 56px;
       --ease: 150ms ease;
@@ -66,63 +66,41 @@
       height: var(--header-h);
       display: flex;
       align-items: center;
-      padding: 0 20px;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-1);
-      border-bottom: 1px solid var(--hairline);
-    }
-    .brand span {
-      color: var(--text-3);
+      padding: 0 16px;
+      font-size: 14px;
       font-weight: 500;
-      margin-left: 6px;
+      color: var(--text-1);
     }
     .sidebar nav {
       display: flex;
       flex-direction: column;
       gap: 2px;
       flex: 1;
-      padding: 16px 10px;
+      padding: 8px 8px 16px;
     }
     .sidebar nav button {
-      position: relative;
       display: flex;
       align-items: center;
       gap: 8px;
       width: 100%;
       text-align: left;
-      padding: 10px 14px;
+      padding: 8px 10px;
       border: 0;
       border-radius: 8px;
       background: transparent;
       color: var(--text-2);
       font-size: 14px;
+      font-weight: 400;
       cursor: pointer;
-      transition: background var(--ease), color var(--ease), opacity var(--ease);
     }
     .sidebar nav button:hover {
       background: var(--elevated);
       color: var(--text-1);
     }
-    .sidebar nav button svg {
-      width: 17px;
-      height: 17px;
-      flex-shrink: 0;
-    }
     .sidebar nav button.on {
-      background: transparent;
-      color: #c98f63;
-      font-weight: 600;
-    }
-    .sidebar nav button.on::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 8px;
-      bottom: 8px;
-      width: 4px;
-      border-radius: 2px;
-      background: var(--acc);
+      background: var(--elevated);
+      color: var(--text-1);
+      font-weight: 500;
     }
     #pendingBadge {
       display: none;
@@ -139,17 +117,6 @@
       text-align: center;
     }
     #pendingBadge.on { display: inline-block; }
-    .sidebar-foot {
-      padding: 12px 20px 4px;
-      border-top: 1px solid var(--hairline);
-    }
-    .sidebar-foot .hint {
-      margin: 0;
-      font-size: 11.5px;
-      line-height: 1.45;
-      color: var(--text-3);
-    }
-
     /* ——— Main column ——— */
     .workspace {
       flex: 1;
@@ -159,26 +126,53 @@
       background: var(--canvas);
     }
     .page-head {
-      height: var(--header-h);
+      min-height: var(--header-h);
       flex-shrink: 0;
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: 16px;
       max-width: var(--measure);
       width: 100%;
       margin: 0 auto;
-      padding: 0 24px;
+      padding: 8px 24px;
       border-bottom: 1px solid var(--hairline);
     }
+    .page-id { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
     .page-head h1 {
       margin: 0;
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 0;
       color: var(--text-1);
     }
     .page-head .lede { display: none; }
+    .data-menu { position: relative; flex-shrink: 0; }
+    .data-menu summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: 8px;
+      color: var(--text-2);
+      font-size: 13px;
+    }
+    .data-menu summary::-webkit-details-marker { display: none; }
+    .data-menu summary:hover { background: var(--elevated); color: var(--text-1); }
+    .data-menu .head-actions {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 4px);
+      z-index: 8;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      min-width: 148px;
+      padding: 4px;
+      background: var(--surface);
+      border: 1px solid var(--hairline);
+      border-radius: 8px;
+    }
+    .data-menu[open] .head-actions { display: flex; }
     .backup {
       padding: 6px 12px;
       border: 1px solid var(--hairline);
@@ -200,11 +194,11 @@
       padding: 24px 24px 96px;
       flex: 1;
     }
-    section { display: none; animation: fade 150ms ease; }
+    section { display: none; }
     section.on { display: block; }
-    @keyframes fade {
-      from { opacity: 0; }
-      to { opacity: 1; }
+    button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--acc);
+      outline-offset: 2px;
     }
 
     /* ——— Dump: one paper page ——— */
@@ -242,7 +236,6 @@
     #dump .paper-foot {
       margin-top: 16px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
       gap: 10px;
       flex-wrap: wrap;
@@ -251,6 +244,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      flex: 1 1 auto;
       flex-wrap: wrap;
     }
     #dump .paper-foot .model-pick {
@@ -323,26 +317,16 @@
       background: color-mix(in srgb, var(--paper-ink) 8%, transparent);
       color: var(--paper-ink);
     }
-    #dump .go { min-width: 88px; }
-    #dump .dump-onboard .ob-title { font-weight: 600; margin: 0 0 6px; font-size: 13px; color: var(--text-1, var(--text)); }
+    #dump .go { min-width: 88px; margin-left: auto; }
     #dump .dump-onboard {
-      margin: 0 0 14px;
+      margin: 0 0 12px;
       padding: 0;
       max-width: 36em;
       font-size: 13px;
-      line-height: 1.55;
+      line-height: 1.5;
       color: var(--text-2);
     }
-    #dump .dump-onboard ol {
-      margin: 0 0 8px;
-      padding-left: 1.25em;
-    }
-    #dump .dump-onboard li { margin: 0.15em 0; }
-    #dump .dump-onboard .local-note {
-      margin: 0 0 6px;
-      color: var(--text-3);
-      font-size: 12.5px;
-    }
+    #dump .dump-onboard p { margin: 0 0 4px; }
     #dump .dump-onboard .ollama-line {
       margin: 0;
       font-size: 12.5px;
@@ -411,7 +395,7 @@
       text-overflow: ellipsis;
     }
     #ollamaLive.down { color: #c98f63; }
-    .page-head .head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .backup { display: block; width: 100%; text-align: left; border: 0; }
     .busy { opacity: 0.65; cursor: wait; }
     .card-status { font-size: 13px; color: var(--text-3); margin: 4px 0 0; }
     .dump-wait {
@@ -449,9 +433,8 @@
       background: var(--acc);
       color: var(--acc-ink);
       font-size: 13.5px;
-      font-weight: 600;
+      font-weight: 500;
       cursor: pointer;
-      transition: background var(--ease), opacity var(--ease);
     }
     button.go:hover { background: var(--acc-hover); }
     button.go:active { background: var(--acc-pressed); }
@@ -510,19 +493,20 @@
 
     /* ——— Cards ——— */
     article {
-      background: var(--elevated);
-      border: 1px solid transparent;
-      border-radius: 10px;
-      padding: 20px 24px;
-      margin: 0 0 12px;
-      transition: background var(--ease), opacity var(--ease);
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--hairline);
+      border-radius: 0;
+      padding: 16px 0 18px;
+      margin: 0;
     }
-    article:hover { background: color-mix(in srgb, var(--elevated) 85%, var(--acc) 8%); }
-    article.hl {
+    article:hover { background: transparent; }
+    article.hl, article.picked {
       background: var(--acc-soft);
-      border-color: color-mix(in srgb, var(--acc) 40%, var(--hairline));
+      border-radius: 8px;
+      padding-left: 12px;
+      padding-right: 12px;
     }
-    article.picked { border-color: var(--acc); }
     article .pick {
       margin: 0 8px 0 0;
       vertical-align: middle;
@@ -570,7 +554,7 @@
     .sum-edit {
       display: block;
       width: 100%;
-      font-weight: 600;
+      font-weight: 500;
       font-size: 16px;
       line-height: 1.45;
       margin: 0 0 10px;
@@ -581,7 +565,7 @@
       color: var(--text-1);
     }
     .sum {
-      font-weight: 600;
+      font-weight: 500;
       margin: 0 0 10px;
       white-space: pre-wrap;
       font-size: 16px;
@@ -624,19 +608,38 @@
     }
     .suggest .tag { margin: 0; }
     article .row { margin-top: 12px; }
+    #searchForm, #askForm {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
     #searchForm { margin-bottom: 8px; }
-    #searchForm .row { margin-top: 14px; }
+    #searchForm .row, #askForm .row { margin-top: 0; flex-shrink: 0; }
     #searchForm input[type=search], #askForm input[type=search] {
+      flex: 1;
+      min-width: 0;
       font-size: 15px;
-      padding: 14px 16px;
-      border-radius: 12px;
+      padding: 12px 14px;
+      border-radius: 10px;
       background: var(--surface);
     }
-    #askForm { margin: 8px 0 12px; }
-    #askForm .row { margin-top: 14px; }
+    #askForm { margin: 0 0 12px; }
+    #askForm button.go { background: transparent; color: var(--text-1); border: 1px solid var(--hairline); }
+    #askForm button.go:hover { background: var(--elevated); }
     #askOut { margin: 0 0 16px; }
     #askOut .ask-ans { white-space: pre-wrap; margin: 0 0 8px; }
     #askOut .ask-cites { display: flex; flex-wrap: wrap; gap: 8px; }
+    .quiet-tools { margin: 0 0 8px; }
+    .quiet-tools summary {
+      cursor: pointer;
+      color: var(--text-3);
+      font-size: 13px;
+      width: fit-content;
+      list-style: none;
+    }
+    .quiet-tools summary::-webkit-details-marker { display: none; }
+    .quiet-tools summary:hover { color: var(--text-1); }
+    .quiet-tools:not([open]) > :not(summary) { display: none; }
 
 
     #graphTags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
@@ -669,61 +672,56 @@
       }
       .sidebar nav {
         flex-direction: row;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        overflow-x: auto;
         gap: 4px;
-        padding: 10px;
+        padding: 8px;
       }
-      .sidebar nav button { width: auto; padding: 8px 12px; }
-      .sidebar nav button.on::before { display: none; }
-      .sidebar nav button.on { background: var(--elevated); }
-      .sidebar-foot { display: none; }
+      .sidebar nav button { width: auto; padding: 8px 12px; white-space: nowrap; }
       .page-head, .canvas { padding-left: 16px; padding-right: 16px; }
       #dump .paper { min-height: 50vh; padding: 18px; }
       #dump textarea { min-height: calc(50vh - 80px); }
+      #searchForm, #askForm { flex-wrap: wrap; }
     }
   </style>
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">入盒<span>Hap</span></div>
+    <div class="brand">入盒</div>
     <nav>
-      <button type="button" data-tab="dump" class="on"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M3 14h4l2 3h6l2-3h4'/><path d='M3 14V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8'/><path d='M3 14v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4'/></svg>傾倒</button>
-      <button type="button" data-tab="notes"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/><path d='M14 3v5h5'/><path d='M9 13h6'/><path d='M9 17h4'/></svg>筆記</button>
-      <button type="button" data-tab="search"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='11' cy='11' r='7'/><path d='m20 20-3.5-3.5'/></svg>搜尋</button>
-      <button type="button" data-tab="pending"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5.5A8 8 0 1 1 21 12z'/><path d='M9 11h.01'/><path d='M13 11h.01'/><path d='M17 11h.01'/></svg>待答 <span id="pendingBadge"></span></button>
-      <button type="button" data-tab="merge"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='18' cy='18' r='3'/><circle cx='6' cy='6' r='3'/><path d='M6 21V9a9 9 0 0 0 9 9'/></svg>合併</button>
-      <button type="button" data-tab="graph"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='6' cy='6' r='2'/><circle cx='18' cy='6' r='2'/><circle cx='12' cy='18' r='2'/><path d='M6 8v2a4 4 0 0 0 4 4'/><path d='M18 8v2a4 4 0 0 1-4 4'/></svg>圖譜</button>
+      <button type="button" data-tab="dump" class="on">傾倒</button>
+      <button type="button" data-tab="notes">筆記</button>
+      <button type="button" data-tab="search">搜尋</button>
+      <button type="button" data-tab="pending">待答 <span id="pendingBadge"></span></button>
+      <button type="button" data-tab="merge">合併</button>
+      <button type="button" data-tab="graph">圖譜</button>
     </nav>
-    <div class="sidebar-foot">
-      <p class="hint">本機 inbox。資料只存呢部機。分類用 Ollama 或 Open WebUI。</p>
-    </div>
   </aside>
   <div class="workspace">
     <header class="page-head">
-      <h1 id="pageTitle">傾倒</h1>
-      <p class="lede" id="pageLede">貼文字或拖檔。分類稍後做。</p>
-      <p id="ollamaLive" class="ollama-live down">連唔到 Ollama（127.0.0.1:11434）</p>
-      <div class="head-actions">
-        <button type="button" class="backup" id="backup">下載備份</button>
-        <button type="button" class="backup" id="exportBox" hidden>匯出呢個盒</button>
-        <button type="button" class="backup" id="importBox">匯入盒備份</button>
-        <button type="button" class="backup" id="restoreBackup">還原備份</button>
-        <button type="button" class="backup" id="wipeLocal">清空本機資料</button>
+      <div class="page-id">
+        <h1 id="pageTitle">傾倒</h1>
+        <p id="ollamaLive" class="ollama-live down">連唔到 Ollama（127.0.0.1:11434）</p>
       </div>
+      <p class="lede" id="pageLede">貼文字或拖檔。分類稍後做。</p>
+      <details class="data-menu">
+        <summary>資料</summary>
+        <div class="head-actions">
+          <button type="button" class="backup" id="backup">下載備份</button>
+          <button type="button" class="backup" id="exportBox" hidden>匯出呢個盒</button>
+          <button type="button" class="backup" id="importBox">匯入盒備份</button>
+          <button type="button" class="backup" id="restoreBackup">還原備份</button>
+          <button type="button" class="backup" id="wipeLocal">清空本機資料</button>
+        </div>
+      </details>
       <input type="file" id="restoreFile" accept="application/json,.json" hidden>
       <input type="file" id="importBoxFile" accept="application/json,.json" hidden>
     </header>
     <main class="canvas">
       <section id="dump" class="on">
         <div id="dumpOnboard" class="dump-onboard" hidden>
-          <div class="ob-title">點用</div>
-          <ol>
-            <li>貼亂筆記／拖檔</li>
-            <li id="dumpOnboardModel">本機 Ollama 分類</li>
-            <li>含糊就去「待答」澄清</li>
-          </ol>
-          <p class="local-note">資料只留呢部機。無 cloud。</p>
+          <p>貼文字或拖檔。<span id="dumpOnboardModel">本機 Ollama 分類</span>。資料只留呢部機。</p>
           <p id="dumpOnboardOllama" class="ollama-line" hidden></p>
         </div>
         <div class="paper" id="dumpPaper">
@@ -747,6 +745,7 @@
                 </select>
               </label>
             </div>
+            <button class="go" type="button" id="dumpGo">存入</button>
             <div id="owuiFields" class="owui-fields" hidden>
               <label class="model-pick">網址
                 <input id="owuiUrl" type="text" placeholder="http://127.0.0.1:8080" autocomplete="off" spellcheck="false" aria-label="Open WebUI URL">
@@ -757,7 +756,6 @@
               <button type="button" class="dim" id="owuiSave">儲存</button>
             </div>
             <p id="owuiErr" class="ollama-setup" hidden></p>
-            <button class="go" type="button" id="dumpGo">存入</button>
             <p id="ollamaSetup" class="ollama-setup" hidden>
               Ollama 未開（127.0.0.1:11434）。本機跑 <code>ollama serve</code>，再 <code>ollama pull <span id="ollamaSetupModel">llama3.2</span></code>。模型下拉會空到 Ollama 上線為止。
             </p>
@@ -782,14 +780,17 @@
           <button type="button" class="del box-unbox">刪盒</button>
           <span class="err box-manage-err" hidden></span>
         </p>
-        <p class="row" id="reclassRow"><button type="button" class="dim" id="reclassMissing">重新分類未分類</button></p>
-        <p class="row" id="tagRename">
-          <input id="tagRenameFrom" placeholder="現時 tag" autocomplete="off" style="max-width:120px">
-          <input id="tagRenameTo" placeholder="新 tag 名" autocomplete="off" style="max-width:120px">
-          <button type="button" class="dim" id="tagRenameGo">改名呢個 tag</button>
-          <button type="button" class="del" id="tagDeleteGo">刪除呢個 tag</button>
-          <span class="err" id="tagRenameErr" hidden></span>
-        </p>
+        <details class="quiet-tools">
+          <summary>整理</summary>
+          <p class="row" id="reclassRow"><button type="button" class="dim" id="reclassMissing">重新分類未分類</button></p>
+          <p class="row" id="tagRename">
+            <input id="tagRenameFrom" placeholder="現時 tag" autocomplete="off" style="max-width:120px">
+            <input id="tagRenameTo" placeholder="新 tag 名" autocomplete="off" style="max-width:120px">
+            <button type="button" class="dim" id="tagRenameGo">改名呢個 tag</button>
+            <button type="button" class="del" id="tagDeleteGo">刪除呢個 tag</button>
+            <span class="err" id="tagRenameErr" hidden></span>
+          </p>
+        </details>
         <p class="row" id="noteMove" hidden>
           <button type="button" class="dim" id="noteSelectAll">全選可見</button>
           <button type="button" class="dim" id="noteSelectNone">取消</button>
